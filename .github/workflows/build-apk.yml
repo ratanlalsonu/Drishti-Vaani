@@ -23,37 +23,20 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Verify Gradle Wrapper
+      - name: Ensure gradlew executable
         run: |
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Downloading gradle-wrapper.jar..."
-            mkdir -p gradle/wrapper
-            curl -sSL -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar
-          fi
           chmod +x gradlew
+          ls -la gradle/wrapper/
 
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug --stacktrace
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
 
-      - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
-
-      - name: Upload APK as Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: drishti-vaani-debug-apk
+          name: drishti-vaani-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: warn
           retention-days: 30
-
-      - name: Publish to GitHub Releases (Tags Only)
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: app/build/outputs/apk/debug/app-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
