@@ -75,7 +75,6 @@ fun OCRScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            ocrViewModel.stopReadingOnExit()
             cameraManager.shutdown(previewViewRef)
         }
     }

@@ -21,9 +21,6 @@ sealed class VoiceCommand {
     data object CheckBattery : VoiceCommand()
     data object CheckTime : VoiceCommand()
     data class SetVisionRange(val limit: DetectionRangeLimit) : VoiceCommand()
-    data class SelectSim(val simSlotIndex: Int) : VoiceCommand()
-    data class SelectCallerApp(val appNameQuery: String) : VoiceCommand()
-    data class CallContactWithSim(val targetName: String, val simSlotIndex: Int) : VoiceCommand()
     data class Unknown(val rawQuery: String) : VoiceCommand()
 }
 

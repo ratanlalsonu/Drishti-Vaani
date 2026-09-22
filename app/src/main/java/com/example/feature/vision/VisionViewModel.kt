@@ -96,42 +96,38 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             SpatialPosition.CENTER -> 0.0f
         }
 
-        val roundedDist = kotlin.math.round(obj.estimatedDistanceMeters * 10f) / 10f
-        val distStrHi = if (roundedDist < 1.0f) "1 मीटर से कम" else "${roundedDist} मीटर"
-        val distStrEn = if (roundedDist < 1.0f) "under 1m" else "${roundedDist}m"
-
         val speech = if (currentLanguage == AssistantLanguage.HINDI) {
             when (obj.priority) {
                 PriorityLevel.CRITICAL -> {
                     hapticManager.triggerCriticalHazard()
-                    "सावधान! ${obj.hindiLabel}, $distStrHi ${obj.position.spokenLabelHi}!"
+                    "सावधान! ${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}!"
                 }
                 PriorityLevel.HIGH -> {
                     hapticManager.triggerMediumAlert()
-                    "${obj.hindiLabel}, $distStrHi ${obj.position.spokenLabelHi}"
+                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
                 }
                 else -> {
-                    "${obj.hindiLabel}, $distStrHi ${obj.position.spokenLabelHi}"
+                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
                 }
             }
         } else {
             when (obj.priority) {
                 PriorityLevel.CRITICAL -> {
                     hapticManager.triggerCriticalHazard()
-                    "Warning! ${obj.label}, $distStrEn ${obj.position.spokenLabelEn}!"
+                    "Warning! ${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}!"
                 }
                 PriorityLevel.HIGH -> {
                     hapticManager.triggerMediumAlert()
-                    "${obj.label}, $distStrEn ${obj.position.spokenLabelEn}"
+                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
                 }
                 else -> {
-                    "${obj.label}, $distStrEn ${obj.position.spokenLabelEn}"
+                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
                 }
             }
         }
 
         _uiState.update { it.copy(lastVocalized = speech) }
-        ttsManager?.speakImmediate(speech, obj.priority, pan)
+        ttsManager?.speak(speech, obj.priority, pan)
     }
 
     private fun recordDetection(obj: DetectedObject) {

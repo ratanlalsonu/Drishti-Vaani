@@ -15,7 +15,7 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var currentLanguage = AssistantLanguage.HINDI
-    private var speechRate = 1.20f
+    private var speechRate = 1.0f
     private var speechPitch = 1.0f
     private var lastSpokenText: String = ""
 
@@ -91,26 +91,6 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
                 }
             }
         })
-    }
-
-    /**
-     * Speaks immediately with zero queue latency by clearing outdated announcements
-     * and flushing the engine. Essential for real-time camera obstacle detection.
-     */
-    fun speakImmediate(text: String, priority: PriorityLevel = PriorityLevel.HIGH, pan: Float = 0.0f) {
-        if (!isInitialized || text.isBlank()) return
-        lastSpokenText = text
-
-        val item = SpeechItem(
-            utteranceId = "utt_${System.currentTimeMillis()}",
-            text = text,
-            priority = priority,
-            panLeftRight = pan
-        )
-
-        tts?.stop()
-        speechQueue.clear()
-        executeSpeech(item, queueMode = TextToSpeech.QUEUE_FLUSH)
     }
 
     fun speak(text: String, priority: PriorityLevel = PriorityLevel.NORMAL, pan: Float = 0.0f) {

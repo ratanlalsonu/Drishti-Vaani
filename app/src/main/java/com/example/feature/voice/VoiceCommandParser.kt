@@ -96,65 +96,6 @@ object VoiceCommandParser {
             normalized.contains("police") || normalized.contains("thana") -> VoiceCommand.FindNearby("police")
             normalized.contains("bus stop") || normalized.contains("railway") || normalized.contains("station") -> VoiceCommand.FindNearby("transit_station")
 
-            // Multi-SIM Voice Selection Answers
-            normalized == "sim 1" || normalized == "sim 1 se" || normalized == "sim 1 se call lagao" ||
-            normalized == "pehla sim" || normalized == "pehle sim se" || normalized == "sim one" ||
-            normalized == "first sim" || normalized == "sim 1 se call" -> VoiceCommand.SelectSim(0)
-
-            normalized == "sim 2" || normalized == "sim 2 se" || normalized == "sim 2 se call lagao" ||
-            normalized == "doosra sim" || normalized == "dusra sim" || normalized == "dusre sim se" ||
-            normalized == "sim two" || normalized == "second sim" || normalized == "sim 2 se call" -> VoiceCommand.SelectSim(1)
-
-            // Caller App Voice Selection Answers
-            normalized == "phone" || normalized == "phone app" || normalized == "phone se" || normalized == "dialer" ->
-                VoiceCommand.SelectCallerApp("phone")
-            normalized == "whatsapp" || normalized == "whatsapp se" || normalized == "whatsapp call" ->
-                VoiceCommand.SelectCallerApp("whatsapp")
-            normalized == "truecaller" || normalized == "truecaller se" ->
-                VoiceCommand.SelectCallerApp("truecaller")
-
-            // Direct Phone Call with SIM already specified (e.g. "SIM 1 se Papa ko call karo")
-            (normalized.contains("sim 1") || normalized.contains("pehla sim")) && (normalized.contains("call") || normalized.contains("phone")) -> {
-                val cleaned = normalized
-                    .replace("sim 1", "")
-                    .replace("pehla sim", "")
-                    .replace("pehle sim se", "")
-                    .replace("se", "")
-                    .replace("karo", "")
-                    .replace("lagao", "")
-                    .replace("milao", "")
-                    .replace("call", "")
-                    .replace("phone", "")
-                    .replace("ko", "")
-                    .trim()
-                if (cleaned.isNotBlank()) {
-                    VoiceCommand.CallContactWithSim(cleaned, 0)
-                } else {
-                    VoiceCommand.SelectSim(0)
-                }
-            }
-
-            (normalized.contains("sim 2") || normalized.contains("dusra sim") || normalized.contains("doosra sim")) && (normalized.contains("call") || normalized.contains("phone")) -> {
-                val cleaned = normalized
-                    .replace("sim 2", "")
-                    .replace("dusra sim", "")
-                    .replace("doosra sim", "")
-                    .replace("dusre sim se", "")
-                    .replace("se", "")
-                    .replace("karo", "")
-                    .replace("lagao", "")
-                    .replace("milao", "")
-                    .replace("call", "")
-                    .replace("phone", "")
-                    .replace("ko", "")
-                    .trim()
-                if (cleaned.isNotBlank()) {
-                    VoiceCommand.CallContactWithSim(cleaned, 1)
-                } else {
-                    VoiceCommand.SelectSim(1)
-                }
-            }
-
             // Direct Voice-Activated Phone Calling (Hands-Free for Blind Users)
             normalized == "call emergency" || normalized == "emergency call" ||
             normalized.contains("112 par call") || normalized.contains("call 112") ||

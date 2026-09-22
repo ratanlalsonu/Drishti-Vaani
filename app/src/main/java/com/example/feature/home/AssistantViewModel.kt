@@ -37,17 +37,6 @@ data class AssistantUiState(
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
     private val database = DrishtiDatabase.getDatabase(application)
     val hapticManager = HapticFeedbackManager(application)
-    private val telephonyHelper = com.example.core.telephony.TelephonyCallHelper(application)
-
-    data class PendingCallState(
-        val phoneNumber: String,
-        val contactName: String,
-        val selectedAppPackage: String? = null,
-        val awaitingSim: Boolean = false,
-        val awaitingApp: Boolean = false
-    )
-
-    private var pendingCall: PendingCallState? = null
 
     var onVisionQueryRequested: (() -> Unit)? = null
     var onVisionRangeChanged: ((com.example.core.model.DetectionRangeLimit) -> Unit)? = null
@@ -241,95 +230,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            is VoiceCommand.SelectSim -> {
-                val pending = pendingCall
-                if (pending != null) {
-                    val simSlot = command.simSlotIndex
-                    val simLabel = if (simSlot == 0) "SIM 1" else "SIM 2"
-                    hapticManager.triggerConfirmation()
-                    val announcement = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
-                        "$simLabel se ${pending.contactName} ko call lagayi ja rahi hai..."
-                    } else {
-                        "Calling ${pending.contactName} using $simLabel now..."
-                    }
-                    ttsManager.speak(announcement, PriorityLevel.CRITICAL)
-                    telephonyHelper.placeCall(
-                        phoneNumber = pending.phoneNumber,
-                        simSlot = simSlot,
-                        targetPackage = pending.selectedAppPackage
-                    )
-                    pendingCall = null
-                } else {
-                    speakFeedback(
-                        "Kisko call lagana chahte hain? Pehle naam bolein jaise 'Papa ko call karo'.",
-                        "Who would you like to call? Say the name first like 'Call Papa'."
-                    )
-                }
-            }
-
-            is VoiceCommand.SelectCallerApp -> {
-                val pending = pendingCall
-                if (pending != null) {
-                    val availableApps = telephonyHelper.getAvailableCallerApps()
-                    val matchedApp = availableApps.firstOrNull {
-                        it.appName.contains(command.appNameQuery, ignoreCase = true) ||
-                        it.packageName.contains(command.appNameQuery, ignoreCase = true)
-                    } ?: availableApps.firstOrNull()
-
-                    val appName = matchedApp?.appName ?: "Phone"
-                    val activeSims = telephonyHelper.getActiveSimCards()
-
-                    if (activeSims.size > 1) {
-                        val sim1 = activeSims[0]
-                        val sim2 = activeSims[1]
-                        val promptHi = "$appName chuna gaya. Ab kis SIM se call lagana hai? SIM 1 (${sim1.carrierName}) ya SIM 2 (${sim2.carrierName})? Boliye SIM 1 ya SIM 2."
-                        val promptEn = "Selected $appName. Which SIM? SIM 1 (${sim1.carrierName}) or SIM 2 (${sim2.carrierName})? Say SIM 1 or SIM 2."
-                        pendingCall = pending.copy(
-                            selectedAppPackage = matchedApp?.packageName,
-                            awaitingSim = true,
-                            awaitingApp = false
-                        )
-                        speakFeedback(promptHi, promptEn)
-                    } else {
-                        val defaultSlot = activeSims.firstOrNull()?.slotIndex ?: 0
-                        val announcement = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
-                            "$appName se ${pending.contactName} ko call lagayi ja rahi hai..."
-                        } else {
-                            "Calling ${pending.contactName} using $appName..."
-                        }
-                        ttsManager.speak(announcement, PriorityLevel.CRITICAL)
-                        telephonyHelper.placeCall(
-                            phoneNumber = pending.phoneNumber,
-                            simSlot = defaultSlot,
-                            targetPackage = matchedApp?.packageName
-                        )
-                        pendingCall = null
-                    }
-                } else {
-                    speakFeedback("Kisko call lagana chahte hain? Pehle contact ka naam bolein.", "Who do you want to call? Say the contact name first.")
-                }
-            }
-
-            is VoiceCommand.CallContactWithSim -> {
-                val queryName = command.targetName.trim()
-                viewModelScope.launch {
-                    val matchedContact = database.emergencyContactDao().findContactByName(queryName)
-                    if (matchedContact != null) {
-                        initiatePhoneCall(matchedContact.phoneNumber, matchedContact.name, explicitSimSlot = command.simSlotIndex)
-                    } else if (queryName.matches(Regex("^[0-9+]{3,14}$"))) {
-                        initiatePhoneCall(queryName, queryName, explicitSimSlot = command.simSlotIndex)
-                    } else {
-                        val all = database.emergencyContactDao().getAllContactsList()
-                        val primary = all.firstOrNull { it.isPrimary } ?: all.firstOrNull()
-                        if (primary != null) {
-                            initiatePhoneCall(primary.phoneNumber, primary.name, explicitSimSlot = command.simSlotIndex)
-                        } else {
-                            initiatePhoneCall("112", "Emergency (112)", explicitSimSlot = command.simSlotIndex)
-                        }
-                    }
-                }
-            }
-
             is VoiceCommand.RepeatSpeech -> {
                 hapticManager.triggerConfirmation()
                 ttsManager.repeatLast()
@@ -393,82 +293,33 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         ttsManager.speak(speech, PriorityLevel.HIGH)
     }
 
-    fun initiatePhoneCall(
-        phoneNumber: String,
-        contactName: String,
-        explicitSimSlot: Int? = null,
-        explicitAppPackage: String? = null
-    ) {
+    fun initiatePhoneCall(phoneNumber: String, contactName: String) {
+        val app = getApplication<Application>()
         hapticManager.triggerConfirmation()
 
-        val activeSims = telephonyHelper.getActiveSimCards()
-        val callerApps = telephonyHelper.getAvailableCallerApps()
-
-        // 1. If explicit SIM slot is specified, place call directly
-        if (explicitSimSlot != null) {
-            val simLabel = if (explicitSimSlot == 0) "SIM 1" else "SIM 2"
-            val announcement = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
-                "$simLabel se $contactName ko turant call lagayi ja rahi hai..."
-            } else {
-                "Calling $contactName using $simLabel now..."
-            }
-            ttsManager.speak(announcement, PriorityLevel.CRITICAL)
-            val success = telephonyHelper.placeCall(phoneNumber, simSlot = explicitSimSlot, targetPackage = explicitAppPackage)
-            if (!success) {
-                speakFeedback("Call lagane me samasya aayi.", "Could not place call.")
-            }
-            pendingCall = null
-            return
-        }
-
-        // 2. If multiple dialer/caller apps exist and none chosen:
-        // Blind person cannot see the app list! Speak app names and ask.
-        if (callerApps.size > 1 && explicitAppPackage == null) {
-            val appNames = callerApps.take(3).map { it.appName }
-            val appListStrHi = appNames.joinToString(", ya ")
-            val appListStrEn = appNames.joinToString(", or ")
-            val promptHi = "$contactName ko call karne ke liye ${callerApps.size} apps hain: $appListStrHi. Boliye ${appNames.first()} ya ${appNames.getOrNull(1) ?: "Phone"}."
-            val promptEn = "There are ${callerApps.size} apps to call $contactName: $appListStrEn. Which app do you want to use? Say ${appNames.first()}."
-
-            pendingCall = PendingCallState(
-                phoneNumber = phoneNumber,
-                contactName = contactName,
-                awaitingApp = true
-            )
-            ttsManager.speak(if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) promptHi else promptEn, PriorityLevel.CRITICAL)
-            return
-        }
-
-        // 3. If multiple SIM cards exist and user hasn't selected a SIM:
-        if (activeSims.size > 1) {
-            val sim1 = activeSims[0]
-            val sim2 = activeSims[1]
-            val promptHi = "Aapke mobile me 2 SIM hain: SIM 1 (${sim1.carrierName}) aur SIM 2 (${sim2.carrierName}). Kis SIM se call lagayein? Boliye SIM 1 ya SIM 2."
-            val promptEn = "Your phone has 2 SIM cards: SIM 1 (${sim1.carrierName}) and SIM 2 (${sim2.carrierName}). Which SIM do you want to use? Say SIM 1 or SIM 2."
-
-            pendingCall = PendingCallState(
-                phoneNumber = phoneNumber,
-                contactName = contactName,
-                selectedAppPackage = explicitAppPackage,
-                awaitingSim = true
-            )
-            ttsManager.speak(if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) promptHi else promptEn, PriorityLevel.CRITICAL)
-            return
-        }
-
-        // 4. Single SIM and standard caller app: Place call directly!
-        val defaultSlot = activeSims.firstOrNull()?.slotIndex ?: 0
         val announcement = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
             "$contactName ko turant call lagayi ja rahi hai..."
         } else {
             "Calling $contactName now..."
         }
         ttsManager.speak(announcement, PriorityLevel.CRITICAL)
-        val success = telephonyHelper.placeCall(phoneNumber, simSlot = defaultSlot, targetPackage = explicitAppPackage)
-        if (!success) {
-            speakFeedback("Call lagane me samasya aayi.", "Could not place call.")
+
+        try {
+            val hasCallPermission = ContextCompat.checkSelfPermission(
+                app,
+                android.Manifest.permission.CALL_PHONE
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val action = if (hasCallPermission) Intent.ACTION_CALL else Intent.ACTION_DIAL
+            val callIntent = Intent(action).apply {
+                data = Uri.parse("tel:$phoneNumber")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            app.startActivity(callIntent)
+        } catch (e: Exception) {
+            val errorMsg = "Call nahi lag payi: ${e.localizedMessage}"
+            ttsManager.speak(errorMsg, PriorityLevel.HIGH)
         }
-        pendingCall = null
     }
 
     fun setLanguage(lang: AssistantLanguage) {

@@ -27,16 +27,6 @@ class HapticFeedbackManager(context: Context) {
         }
     }
 
-    fun triggerLightTick() {
-        if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(20)
-        }
-    }
-
     fun triggerMediumAlert() {
         if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
