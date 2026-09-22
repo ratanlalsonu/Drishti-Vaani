@@ -22,19 +22,23 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:assembleDebug --no-configuration-cache --stacktrace
 
       - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: drishti-vaani-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Publish to GitHub Releases (Tags Only)
