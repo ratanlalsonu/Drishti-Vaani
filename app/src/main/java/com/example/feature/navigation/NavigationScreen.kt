@@ -15,9 +15,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.LocalAtm
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.LocalPharmacy
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Security
@@ -181,6 +184,96 @@ fun NavigationScreen(
                             color = HighContrastYellow,
                             fontSize = 12.sp
                         )
+                    }
+                }
+            }
+
+            // Active Navigation Route Card (When navigating to Police, Hospital, etc.)
+            if (uiState.isNavigating && uiState.activeDestination.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("card_active_navigation")
+                        .semantics {
+                            contentDescription = "Active Walking Navigation to ${uiState.activeDestination}"
+                        },
+                    colors = CardDefaults.cardColors(containerColor = AccessibleDarkSurface),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(2.dp, HighContrastGreen)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsWalk,
+                                    contentDescription = null,
+                                    tint = HighContrastGreen,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Spacer(modifier = Modifier.size(8.dp))
+                                Column {
+                                    Text(
+                                        text = "ACTIVE WALKING ROUTE",
+                                        color = HighContrastGreen,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${uiState.activeDestination} (${uiState.activeDestinationHi})",
+                                        color = Color.White,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { navigationViewModel.stopNavigation() },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(HighContrastYellow)
+                                    .semantics { contentDescription = "Stop navigation" }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = null,
+                                    tint = AccessibleBlack,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = { navigationViewModel.launchNavigationIntent() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("btn_open_google_maps"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = HighContrastGreen,
+                                contentColor = AccessibleBlack
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.size(8.dp))
+                            Text(
+                                text = "OPEN IN GOOGLE MAPS",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 }
             }

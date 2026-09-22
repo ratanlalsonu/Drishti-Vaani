@@ -183,7 +183,11 @@ fun HomeScreen(
                             .clickable(onClick = onMicClick)
                             .testTag("voice_command_trigger")
                             .semantics {
-                                contentDescription = if (uiState.isListening) "Listening. Tap to stop" else "Tap to speak voice command"
+                                contentDescription = if (uiState.isListening) {
+                                    "Hands free microphone active and listening. Tap to pause."
+                                } else {
+                                    "Hands free microphone ready. Just speak anytime, no tap needed."
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -196,10 +200,16 @@ fun HomeScreen(
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (uiState.isListening) "Sun raha hoon... (Listening)" else "Boliye (Tap to Speak)",
+                        text = if (uiState.isListening) "सुन रहे हैं... (Listening)" else "हैंड्स-फ्री एक्टिव (कभी भी बोलें)",
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "टैप करने की ज़रूरत नहीं - आवाज़ अपने आप काम करेगी",
+                        color = HighContrastYellow,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }

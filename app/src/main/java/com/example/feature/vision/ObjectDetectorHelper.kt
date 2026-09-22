@@ -50,7 +50,7 @@ class ObjectDetectorHelper(
     private var isClosed = false
 
     private var lastAnalyzedTimestamp = 0L
-    private val frameIntervalMs = 250L // ~4 FPS for smooth real-time response
+    private val frameIntervalMs = 90L // ~11 FPS for instant zero-latency real-time response
 
     // Periodic scene classification cache (refreshed periodically to avoid multiple TFLite tasks per frame)
     private var lastSceneLabelTimestamp = 0L
@@ -84,8 +84,8 @@ class ObjectDetectorHelper(
         val imageWidth = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.height else imageProxy.width
         val imageHeight = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.width else imageProxy.height
 
-        // Refresh scene-level classes periodically in background
-        if (currentTimestamp - lastSceneLabelTimestamp > 1500L && !isClosed) {
+        // Refresh scene-level classes periodically in background (3.5s interval to ensure 100% GPU to object detector)
+        if (currentTimestamp - lastSceneLabelTimestamp > 3500L && !isClosed) {
             lastSceneLabelTimestamp = currentTimestamp
             imageLabeler.process(inputImage)
                 .addOnSuccessListener { labels ->

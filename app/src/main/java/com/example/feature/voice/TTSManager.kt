@@ -15,12 +15,16 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var currentLanguage = AssistantLanguage.HINDI
-    private var speechRate = 1.0f
+    private var speechRate = 1.20f
     private var speechPitch = 1.0f
     private var lastSpokenText: String = ""
 
     private val speechQueue = ConcurrentLinkedQueue<SpeechItem>()
     private var isSpeaking = false
+
+    var onSpeakingStateChanged: ((Boolean) -> Unit)? = null
+
+    fun isCurrentlySpeaking(): Boolean = isSpeaking
 
     data class SpeechItem(
         val utteranceId: String,
@@ -56,24 +60,57 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 isSpeaking = true
+                onSpeakingStateChanged?.invoke(true)
             }
 
             override fun onDone(utteranceId: String?) {
-                isSpeaking = false
-                processNextInQueue()
+                if (speechQueue.isEmpty()) {
+                    isSpeaking = false
+                    onSpeakingStateChanged?.invoke(false)
+                } else {
+                    processNextInQueue()
+                }
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                isSpeaking = false
-                processNextInQueue()
+                if (speechQueue.isEmpty()) {
+                    isSpeaking = false
+                    onSpeakingStateChanged?.invoke(false)
+                } else {
+                    processNextInQueue()
+                }
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                isSpeaking = false
-                processNextInQueue()
+                if (speechQueue.isEmpty()) {
+                    isSpeaking = false
+                    onSpeakingStateChanged?.invoke(false)
+                } else {
+                    processNextInQueue()
+                }
             }
         })
+    }
+
+    /**
+     * Speaks immediately with zero queue latency by clearing outdated announcements
+     * and flushing the engine. Essential for real-time camera obstacle detection.
+     */
+    fun speakImmediate(text: String, priority: PriorityLevel = PriorityLevel.HIGH, pan: Float = 0.0f) {
+        if (!isInitialized || text.isBlank()) return
+        lastSpokenText = text
+
+        val item = SpeechItem(
+            utteranceId = "utt_${System.currentTimeMillis()}",
+            text = text,
+            priority = priority,
+            panLeftRight = pan
+        )
+
+        tts?.stop()
+        speechQueue.clear()
+        executeSpeech(item, queueMode = TextToSpeech.QUEUE_FLUSH)
     }
 
     fun speak(text: String, priority: PriorityLevel = PriorityLevel.NORMAL, pan: Float = 0.0f) {
@@ -129,6 +166,7 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
         speechQueue.clear()
         tts?.stop()
         isSpeaking = false
+        onSpeakingStateChanged?.invoke(false)
     }
 
     fun setLanguage(language: AssistantLanguage) {
