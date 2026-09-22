@@ -43,10 +43,12 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 mlkitTextRecognition = "16.0.1"
 mlkitObjectDetection = "17.0.2"
+mlkitImageLabeling = "17.0.9"
 
 [libraries]
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 mlkit-objectdetection = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
+mlkit-image-labeling = { group = "com.google.mlkit", name = "image-labeling", version.ref = "mlkitImageLabeling" }
 
 
 

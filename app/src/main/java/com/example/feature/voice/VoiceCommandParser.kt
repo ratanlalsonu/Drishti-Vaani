@@ -51,6 +51,16 @@ object VoiceCommandParser {
             normalized.contains("what is around me") ||
             normalized.contains("describe this") -> VoiceCommand.QuerySurroundings
 
+            // Vision Range Limit controls (e.g. 5m, 10m threshold)
+            normalized.contains("5 meter") || normalized.contains("5m") || normalized.contains("paanch meter") ->
+                VoiceCommand.SetVisionRange(com.example.core.model.DetectionRangeLimit.SHORT_5M)
+
+            normalized.contains("10 meter") || normalized.contains("10m") || normalized.contains("das meter") ->
+                VoiceCommand.SetVisionRange(com.example.core.model.DetectionRangeLimit.STANDARD_10M)
+
+            normalized.contains("all distance") || normalized.contains("unlimited range") || normalized.contains("sab doori") ->
+                VoiceCommand.SetVisionRange(com.example.core.model.DetectionRangeLimit.UNLIMITED)
+
             // Direct jumping to Text Reading / OCR from ANY screen
             normalized.contains("text reader par") ||
             normalized.contains("ocr par le chalo") ||
@@ -90,6 +100,37 @@ object VoiceCommandParser {
             normalized.contains("atm") || normalized.contains("bank") -> VoiceCommand.FindNearby("atm")
             normalized.contains("police") || normalized.contains("thana") -> VoiceCommand.FindNearby("police")
             normalized.contains("bus stop") || normalized.contains("railway") || normalized.contains("station") -> VoiceCommand.FindNearby("transit_station")
+
+            // Direct Voice-Activated Phone Calling (Hands-Free for Blind Users)
+            normalized == "call emergency" || normalized == "emergency call" ||
+            normalized.contains("112 par call") || normalized.contains("call 112") ||
+            normalized.contains("call 100") || normalized.contains("100 par call") ||
+            normalized.contains("emergency ko call") -> VoiceCommand.CallEmergency
+
+            normalized.startsWith("call ") && !normalized.contains("camera") && !normalized.contains("vision") && !normalized.contains("settings") -> {
+                val target = normalized.removePrefix("call").trim()
+                if (target.isNotBlank()) VoiceCommand.CallContact(target) else VoiceCommand.CallEmergency
+            }
+
+            normalized.contains("ko call") || normalized.contains("ko phone") -> {
+                val cleaned = normalized
+                    .replace("karo", "")
+                    .replace("lagao", "")
+                    .replace("milao", "")
+                    .replace("kijiye", "")
+                    .trim()
+                val parts = if (cleaned.contains("ko call")) {
+                    cleaned.split("ko call")
+                } else {
+                    cleaned.split("ko phone")
+                }
+                val name = parts.firstOrNull()?.trim() ?: ""
+                if (name.isNotBlank()) {
+                    VoiceCommand.CallContact(name)
+                } else {
+                    VoiceCommand.CallEmergency
+                }
+            }
 
             // Direct jumping to Emergency SOS from ANY screen
             normalized.contains("emergency") ||

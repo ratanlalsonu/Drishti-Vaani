@@ -16,8 +16,14 @@ interface EmergencyContactDao {
     @Query("SELECT * FROM emergency_contacts ORDER BY isPrimary DESC, id ASC")
     fun getAllContacts(): Flow<List<EmergencyContact>>
 
+    @Query("SELECT * FROM emergency_contacts")
+    suspend fun getAllContactsList(): List<EmergencyContact>
+
     @Query("SELECT * FROM emergency_contacts WHERE isPrimary = 1 LIMIT 1")
     suspend fun getPrimaryContact(): EmergencyContact?
+
+    @Query("SELECT * FROM emergency_contacts WHERE LOWER(name) LIKE '%' || LOWER(:searchName) || '%' OR LOWER(relationship) LIKE '%' || LOWER(:searchName) || '%' LIMIT 1")
+    suspend fun findContactByName(searchName: String): EmergencyContact?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContact(contact: EmergencyContact): Long

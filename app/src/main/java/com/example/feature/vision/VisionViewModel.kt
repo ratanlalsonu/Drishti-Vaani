@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.core.accessibility.HapticFeedbackManager
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.DetectedObject
+import com.example.core.model.DetectionRangeLimit
 import com.example.core.model.PriorityLevel
 import com.example.core.model.SpatialPosition
 import com.example.data.local.DrishtiDatabase
@@ -24,7 +25,8 @@ data class VisionUiState(
     val previewHeight: Int = 0,
     val isAnalyzing: Boolean = false,
     val lastVocalized: String = "",
-    val cameraStatus: String = "Initializing..."
+    val cameraStatus: String = "Initializing...",
+    val rangeLimit: DetectionRangeLimit = DetectionRangeLimit.STANDARD_10M
 )
 
 class VisionViewModel(application: Application) : AndroidViewModel(application) {
@@ -43,27 +45,46 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         this.currentLanguage = language
     }
 
+    fun setRangeLimit(range: DetectionRangeLimit) {
+        _uiState.update { it.copy(rangeLimit = range) }
+        throttler.clear()
+        val speech = if (currentLanguage == AssistantLanguage.HINDI) {
+            "डिटेक्शन रेंज ${range.labelHi} सेट की गई।"
+        } else {
+            "Detection range set to ${range.labelEn}."
+        }
+        ttsManager?.speak(speech, PriorityLevel.HIGH)
+    }
+
     fun onDetectionsReceived(objects: List<DetectedObject>, width: Int, height: Int) {
+        val currentMax = _uiState.value.rangeLimit.maxMeters
+
+        // Filter out any objects that exceed user range threshold (e.g. > 10m)
+        val validRangeObjects = objects.filter { it.estimatedDistanceMeters <= currentMax }
+
         _uiState.update {
             it.copy(
-                detections = objects,
+                detections = validRangeObjects,
                 previewWidth = width,
                 previewHeight = height,
                 isAnalyzing = true,
-                cameraStatus = "Active (${objects.size} objects)"
+                cameraStatus = "Active (${validRangeObjects.size} in ${_uiState.value.rangeLimit.maxMeters.toInt()}m range)"
             )
         }
 
-        if (objects.isEmpty()) return
+        if (validRangeObjects.isEmpty()) return
 
-        // Sort by priority first (CRITICAL > HIGH > NORMAL), then by proximity
-        val prioritySorted = objects.sortedByDescending { it.priority.ordinal }
+        // Sort by priority first (CRITICAL > HIGH > NORMAL), then by distance (closest first)
+        val prioritySorted = validRangeObjects.sortedWith(
+            compareByDescending<DetectedObject> { it.priority.ordinal }
+                .thenBy { it.estimatedDistanceMeters }
+        )
 
         for (obj in prioritySorted) {
             if (throttler.shouldAnnounce(obj)) {
                 announceObject(obj)
                 recordDetection(obj)
-                break // Announce highest priority object per cycle to avoid speech collision
+                break // Announce single most important object per cycle to prevent speech overlap
             }
         }
     }
@@ -79,28 +100,28 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             when (obj.priority) {
                 PriorityLevel.CRITICAL -> {
                     hapticManager.triggerCriticalHazard()
-                    "Savdhan! ${obj.hindiLabel} bahut paas ${obj.position.spokenLabelHi} hai!"
+                    "सावधान! ${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}!"
                 }
                 PriorityLevel.HIGH -> {
                     hapticManager.triggerMediumAlert()
-                    "${obj.hindiLabel} ${obj.position.spokenLabelHi}."
+                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
                 }
                 else -> {
-                    "${obj.hindiLabel} ${obj.position.spokenLabelHi}."
+                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
                 }
             }
         } else {
             when (obj.priority) {
                 PriorityLevel.CRITICAL -> {
                     hapticManager.triggerCriticalHazard()
-                    "Warning! ${obj.label} very close ${obj.position.spokenLabelEn}!"
+                    "Warning! ${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}!"
                 }
                 PriorityLevel.HIGH -> {
                     hapticManager.triggerMediumAlert()
-                    "${obj.label} ${obj.position.spokenLabelEn}."
+                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
                 }
                 else -> {
-                    "${obj.label} ${obj.position.spokenLabelEn}."
+                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
                 }
             }
         }
@@ -114,7 +135,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 database.detectionHistoryDao().insertDetection(
                     DetectionRecord(
-                        objectLabel = obj.label,
+                        objectLabel = "${obj.label} (~${obj.estimatedDistanceMeters}m)",
                         position = obj.position.name,
                         proximity = obj.proximity.name,
                         priority = obj.priority.name
@@ -128,19 +149,23 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         val currentDetections = _uiState.value.detections
         if (currentDetections.isEmpty()) {
             val emptyMsg = if (currentLanguage == AssistantLanguage.HINDI) {
-                "Samne koi pramukh rukavat nahi dikh rahi hai."
+                "${_uiState.value.rangeLimit.maxMeters.toInt()} मीटर के दायरे में सामने कोई रुकावट नहीं है।"
             } else {
-                "No major obstacles detected directly ahead."
+                "No obstacles within ${_uiState.value.rangeLimit.maxMeters.toInt()} meters ahead."
             }
             ttsManager?.speak(emptyMsg, PriorityLevel.HIGH)
             return
         }
 
         val summary = if (currentLanguage == AssistantLanguage.HINDI) {
-            val items = currentDetections.take(3).joinToString(", ") { "${it.hindiLabel} (${it.position.spokenLabelHi})" }
-            "Samne dikh raha hai: $items."
+            val items = currentDetections.take(3).joinToString(", ") {
+                "${it.hindiLabel} (${it.distanceDescriptionHi}, ${it.position.spokenLabelHi})"
+            }
+            "सामने स्थित है: $items."
         } else {
-            val items = currentDetections.take(3).joinToString(", ") { "${it.label} ${it.position.spokenLabelEn}" }
+            val items = currentDetections.take(3).joinToString(", ") {
+                "${it.label} (${it.distanceDescriptionEn}, ${it.position.spokenLabelEn})"
+            }
             "In front of you: $items."
         }
         ttsManager?.speak(summary, PriorityLevel.HIGH)

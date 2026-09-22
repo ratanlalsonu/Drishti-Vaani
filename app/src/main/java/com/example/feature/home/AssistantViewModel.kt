@@ -1,6 +1,10 @@
 package com.example.feature.home
 
 import android.app.Application
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.accessibility.HapticFeedbackManager
@@ -161,11 +165,48 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.update { it.copy(isEmergencyActive = true, activeScreen = "emergency") }
                 val contact = _uiState.value.primaryContact
                 val response = if (contact != null) {
-                    "Emergency mode sakriya hai. Kya aap ${contact.name} ko call karna chahte hain? 'Yes' ya 'Haan' boliye."
+                    "Emergency mode sakriya hai. ${contact.name} ko call lagane ke liye 'Call ${contact.name}' boliye ya 'Call Emergency' boliye."
                 } else {
-                    "Emergency mode active. Kripya emergency contact jodein."
+                    "Emergency mode active. Turant call lagane ke liye 'Call 112' boliye."
                 }
                 ttsManager.speak(response, PriorityLevel.CRITICAL)
+            }
+
+            is VoiceCommand.CallContact -> {
+                val queryName = command.targetName.trim()
+                viewModelScope.launch {
+                    val matchedContact = database.emergencyContactDao().findContactByName(queryName)
+                    if (matchedContact != null) {
+                        initiatePhoneCall(matchedContact.phoneNumber, matchedContact.name)
+                    } else if (queryName.matches(Regex("^[0-9+]{3,14}$"))) {
+                        // Directly dialed phone number e.g. "Call 112" or "Call 9876543210"
+                        initiatePhoneCall(queryName, queryName)
+                    } else {
+                        val all = database.emergencyContactDao().getAllContactsList()
+                        val primary = all.firstOrNull { it.isPrimary } ?: all.firstOrNull()
+                        if (primary != null) {
+                            val msgHi = "'$queryName' naam ka contact nahi mila. Kya aap ${primary.name} ko call karna chahte hain? 'Call ${primary.name}' boliye."
+                            val msgEn = "Contact '$queryName' not found. Say 'Call ${primary.name}' to call primary contact."
+                            speakFeedback(msgHi, msgEn)
+                        } else {
+                            val msgHi = "'$queryName' naam ka contact save nahi hai. Emergency ke liye 'Call 112' bolein."
+                            val msgEn = "No contact found for '$queryName'. For emergency, say 'Call 112'."
+                            speakFeedback(msgHi, msgEn)
+                        }
+                    }
+                }
+            }
+
+            is VoiceCommand.CallEmergency -> {
+                hapticManager.triggerCriticalHazard()
+                viewModelScope.launch {
+                    val primary = database.emergencyContactDao().getPrimaryContact()
+                    if (primary != null) {
+                        initiatePhoneCall(primary.phoneNumber, primary.name)
+                    } else {
+                        initiatePhoneCall("112", "Emergency Services (112)")
+                    }
+                }
             }
 
             is VoiceCommand.RepeatSpeech -> {
@@ -181,6 +222,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 hapticManager.triggerConfirmation()
                 _uiState.update { it.copy(activeScreen = "settings") }
                 speakFeedback("Settings khul gayi hai.", "Opening settings.")
+            }
+
+            is VoiceCommand.SetVisionRange -> {
+                hapticManager.triggerConfirmation()
+                val hindiMsg = "Vision detection range ${command.limit.labelHi} par set ki gayi."
+                val englishMsg = "Vision detection range set to ${command.limit.labelEn}."
+                speakFeedback(hindiMsg, englishMsg)
             }
 
             is VoiceCommand.Help -> {
@@ -220,6 +268,35 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         val speech = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) hindiText else englishText
         _uiState.update { it.copy(assistantFeedback = speech) }
         ttsManager.speak(speech, PriorityLevel.HIGH)
+    }
+
+    fun initiatePhoneCall(phoneNumber: String, contactName: String) {
+        val app = getApplication<Application>()
+        hapticManager.triggerConfirmation()
+
+        val announcement = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
+            "$contactName ko turant call lagayi ja rahi hai..."
+        } else {
+            "Calling $contactName now..."
+        }
+        ttsManager.speak(announcement, PriorityLevel.CRITICAL)
+
+        try {
+            val hasCallPermission = ContextCompat.checkSelfPermission(
+                app,
+                android.Manifest.permission.CALL_PHONE
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val action = if (hasCallPermission) Intent.ACTION_CALL else Intent.ACTION_DIAL
+            val callIntent = Intent(action).apply {
+                data = Uri.parse("tel:$phoneNumber")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            app.startActivity(callIntent)
+        } catch (e: Exception) {
+            val errorMsg = "Call nahi lag payi: ${e.localizedMessage}"
+            ttsManager.speak(errorMsg, PriorityLevel.HIGH)
+        }
     }
 
     fun setLanguage(lang: AssistantLanguage) {

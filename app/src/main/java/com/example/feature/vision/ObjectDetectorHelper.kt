@@ -6,10 +6,15 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.example.core.model.DetectedObject
+import com.example.core.model.DetectionRangeLimit
+import com.example.core.model.ObjectCategory
 import com.example.core.model.PriorityLevel
 import com.example.core.model.ProximityTier
 import com.example.core.model.SpatialPosition
+import com.example.core.model.YoloObjectTaxonomy
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 
@@ -18,19 +23,47 @@ class ObjectDetectorHelper(
     private val onError: (Exception) -> Unit = {}
 ) : ImageAnalysis.Analyzer {
 
-    // On-device real-time stream object detector with multiple objects and classification enabled
-    private val options = ObjectDetectorOptions.Builder()
+    // Range threshold: default 10 meters as requested by user
+    @Volatile
+    var maxRangeMeters: Float = DetectionRangeLimit.STANDARD_10M.maxMeters
+
+    // Stream-mode ML Kit Object Detector with classification
+    private val objectDetectorOptions = ObjectDetectorOptions.Builder()
         .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
         .enableMultipleObjects()
         .enableClassification()
         .build()
 
-    private val detector = ObjectDetection.getClient(options)
+    private val objectDetector = ObjectDetection.getClient(objectDetectorOptions)
+
+    // ML Kit Image Labeler (provides 400+ specific everyday YOLO-like classes)
+    private val imageLabelerOptions = ImageLabelerOptions.Builder()
+        .setConfidenceThreshold(0.50f)
+        .build()
+
+    private val imageLabeler = ImageLabeling.getClient(imageLabelerOptions)
+
+    @Volatile
+    private var isAnalyzingFrame = false
+
+    @Volatile
+    private var isClosed = false
+
     private var lastAnalyzedTimestamp = 0L
-    private val frameIntervalMs = 250L // Process every 250ms (~4 FPS) to prevent battery drain and thermal throttling
+    private val frameIntervalMs = 250L // ~4 FPS for smooth real-time response
+
+    // Periodic scene classification cache (refreshed periodically to avoid multiple TFLite tasks per frame)
+    private var lastSceneLabelTimestamp = 0L
+    @Volatile
+    private var cachedSceneLabels: List<String> = emptyList()
 
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
+        if (isClosed || isAnalyzingFrame) {
+            imageProxy.close()
+            return
+        }
+
         val currentTimestamp = System.currentTimeMillis()
         if (currentTimestamp - lastAnalyzedTimestamp < frameIntervalMs) {
             imageProxy.close()
@@ -44,17 +77,38 @@ class ObjectDetectorHelper(
             return
         }
 
+        isAnalyzingFrame = true
+
         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
         val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
         val imageWidth = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.height else imageProxy.width
         val imageHeight = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.width else imageProxy.height
 
-        detector.process(inputImage)
-            .addOnSuccessListener { detectedObjects ->
-                val results = mutableListOf<DetectedObject>()
-                val totalFrameArea = (imageWidth * imageHeight).toFloat()
+        // Refresh scene-level classes periodically in background
+        if (currentTimestamp - lastSceneLabelTimestamp > 1500L && !isClosed) {
+            lastSceneLabelTimestamp = currentTimestamp
+            imageLabeler.process(inputImage)
+                .addOnSuccessListener { labels ->
+                    if (!isClosed) {
+                        cachedSceneLabels = labels
+                            .filter { it.confidence >= 0.50f }
+                            .map { it.text }
+                    }
+                }
+                .addOnFailureListener {
+                    // Ignore background labeler cancel/lifecycle errors
+                }
+        }
 
-                for (obj in detectedObjects) {
+        // Run stream object detector for real-time bounding boxes & classifications
+        objectDetector.process(inputImage)
+            .addOnSuccessListener { detectedObjects ->
+                if (isClosed) return@addOnSuccessListener
+
+                val results = mutableListOf<DetectedObject>()
+                val dominantLabels = cachedSceneLabels
+
+                for ((index, obj) in detectedObjects.withIndex()) {
                     val box = obj.boundingBox
                     val rectF = RectF(
                         box.left.toFloat().coerceAtLeast(0f),
@@ -63,6 +117,7 @@ class ObjectDetectorHelper(
                         box.bottom.toFloat().coerceAtMost(imageHeight.toFloat())
                     )
 
+                    // Spatial Position (Left, Center, Right)
                     val centerX = rectF.centerX() / imageWidth.toFloat()
                     val position = when {
                         centerX < 0.33f -> SpatialPosition.LEFT
@@ -70,79 +125,112 @@ class ObjectDetectorHelper(
                         else -> SpatialPosition.CENTER
                     }
 
-                    val boxArea = rectF.width() * rectF.height()
-                    val areaRatio = if (totalFrameArea > 0f) boxArea / totalFrameArea else 0f
+                    val heightRatio = rectF.height() / imageHeight.toFloat()
+                    val widthRatio = rectF.width() / imageWidth.toFloat()
+
+                    // Resolve best object label:
+                    val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text
+                    val chosenRawLabel = when {
+                        !detectorLabel.isNullOrBlank() &&
+                        !detectorLabel.equals("Home good", ignoreCase = true) &&
+                        !detectorLabel.equals("Fashion good", ignoreCase = true) &&
+                        !detectorLabel.equals("Place", ignoreCase = true) -> detectorLabel
+
+                        dominantLabels.isNotEmpty() -> {
+                            dominantLabels.getOrNull(index) ?: dominantLabels.first()
+                        }
+
+                        !detectorLabel.isNullOrBlank() -> detectorLabel
+                        else -> "Obstacle"
+                    }
+
+                    // Match with YOLO / COCO taxonomy
+                    val meta = YoloObjectTaxonomy.resolveLabel(chosenRawLabel)
+
+                    // Calculate estimated distance in meters using pinhole geometry
+                    val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
+                        meta = meta,
+                        heightRatio = heightRatio,
+                        widthRatio = widthRatio
+                    )
+
+                    // Check 10-meter threshold (or user-defined range)
+                    if (estimatedDistanceMeters > maxRangeMeters) {
+                        continue
+                    }
 
                     val proximity = when {
-                        areaRatio > 0.30f -> ProximityTier.VERY_CLOSE
-                        areaRatio > 0.10f -> ProximityTier.NEARBY
+                        estimatedDistanceMeters < 1.5f -> ProximityTier.VERY_CLOSE
+                        estimatedDistanceMeters < 4.5f -> ProximityTier.NEARBY
                         else -> ProximityTier.FAR
                     }
 
-                    // Best label from ML Kit classification
-                    val bestLabel = obj.labels.maxByOrNull { it.confidence }
-                    val labelText = bestLabel?.text ?: "Obstacle"
-                    val confidence = bestLabel?.confidence ?: 0.65f
-
-                    val priority = determinePriority(labelText, proximity)
-                    val hindiLabel = translateToHindi(labelText)
+                    val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
+                    val distanceDescHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true)
+                    val distanceDescEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false)
 
                     results.add(
                         DetectedObject(
-                            label = labelText,
-                            hindiLabel = hindiLabel,
-                            confidence = confidence,
+                            label = meta.englishName,
+                            hindiLabel = meta.hindiName,
+                            confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.70f,
                             boundingBox = rectF,
                             position = position,
                             proximity = proximity,
-                            priority = priority
+                            priority = priority,
+                            estimatedDistanceMeters = estimatedDistanceMeters,
+                            distanceDescriptionHi = distanceDescHi,
+                            distanceDescriptionEn = distanceDescEn,
+                            category = meta.category,
+                            isBeyondThreshold = false
                         )
                     )
                 }
 
-                onDetectionsReady(results, imageWidth, imageHeight)
+                if (!isClosed) {
+                    onDetectionsReady(results, imageWidth, imageHeight)
+                }
             }
             .addOnFailureListener { exception ->
-                onError(exception)
+                if (!isClosed && exception.message?.contains("cancel", ignoreCase = true) != true) {
+                    onError(exception)
+                }
             }
             .addOnCompleteListener {
-                imageProxy.close()
+                try {
+                    imageProxy.close()
+                } catch (_: Exception) {}
+                isAnalyzingFrame = false
             }
     }
 
-    private fun determinePriority(label: String, proximity: ProximityTier): PriorityLevel {
-        val lower = label.lowercase()
+    private fun determinePriority(
+        meta: com.example.core.model.ObjectMeta,
+        proximity: ProximityTier,
+        distanceMeters: Float
+    ): PriorityLevel {
         return when {
-            proximity == ProximityTier.VERY_CLOSE -> PriorityLevel.CRITICAL
-            lower.contains("vehicle") || lower.contains("car") || lower.contains("truck") ||
-            lower.contains("bus") || lower.contains("motorcycle") || lower.contains("bicycle") -> PriorityLevel.HIGH
-            lower.contains("person") || lower.contains("human") -> PriorityLevel.HIGH
-            lower.contains("stair") || lower.contains("step") || lower.contains("door") -> PriorityLevel.HIGH
-            lower.contains("chair") || lower.contains("table") || lower.contains("furniture") -> PriorityLevel.NORMAL
+            // Immediate collision hazard: closer than 1.2m
+            distanceMeters < 1.2f -> PriorityLevel.CRITICAL
+            meta.isCriticalHazard && distanceMeters < 3.5f -> PriorityLevel.CRITICAL
+            meta.isCriticalHazard -> PriorityLevel.HIGH
+            meta.category == ObjectCategory.PERSON && distanceMeters < 4.0f -> PriorityLevel.HIGH
+            meta.category == ObjectCategory.VEHICLE -> PriorityLevel.HIGH
+            meta.category == ObjectCategory.HAZARD -> PriorityLevel.HIGH
+            proximity == ProximityTier.VERY_CLOSE -> PriorityLevel.HIGH
+            proximity == ProximityTier.NEARBY -> PriorityLevel.NORMAL
             else -> PriorityLevel.LOW
-
-        }
-    }
-
-    private fun translateToHindi(label: String): String {
-        val lower = label.lowercase()
-        return when {
-            lower.contains("person") || lower.contains("human") -> "व्यक्ति (Person)"
-            lower.contains("car") || lower.contains("vehicle") -> "गाड़ी (Vehicle)"
-            lower.contains("bicycle") -> "साइकिल (Bicycle)"
-            lower.contains("motorcycle") -> "मोटरसाइकिल (Motorcycle)"
-            lower.contains("bus") -> "बस (Bus)"
-            lower.contains("chair") -> "कुर्सी (Chair)"
-            lower.contains("table") -> "मेज़ (Table)"
-            lower.contains("door") -> "दरवाज़ा (Door)"
-            lower.contains("stairs") -> "सीढ़ियां (Stairs)"
-            else -> "रुकावट (Obstacle)"
         }
     }
 
     fun close() {
+        isClosed = true
+        isAnalyzingFrame = false
         try {
-            detector.close()
+            objectDetector.close()
+        } catch (_: Exception) {}
+        try {
+            imageLabeler.close()
         } catch (_: Exception) {}
     }
 }

@@ -46,6 +46,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Ensure ML Kit local cache & acceleration storage directory exists to avoid native proto_data_store file error
+        try {
+            val accelDir = java.io.File(filesDir, "com.google.mlkit.acceleration")
+            if (!accelDir.exists()) {
+                accelDir.mkdirs()
+            }
+        } catch (_: Exception) {}
+
         setContent {
             MyApplicationTheme {
                 Scaffold(
@@ -110,7 +118,8 @@ fun AppRoot(
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO,
                 Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.CALL_PHONE
             )
         )
     }
@@ -121,6 +130,14 @@ fun AppRoot(
                 uiState = visionState,
                 onBackClick = { assistantViewModel.navigateToScreen("home") },
                 onQuerySurroundings = { visionViewModel.summarizeCurrentView() },
+                onRangeToggle = {
+                    val next = when (visionState.rangeLimit) {
+                        com.example.core.model.DetectionRangeLimit.STANDARD_10M -> com.example.core.model.DetectionRangeLimit.SHORT_5M
+                        com.example.core.model.DetectionRangeLimit.SHORT_5M -> com.example.core.model.DetectionRangeLimit.UNLIMITED
+                        com.example.core.model.DetectionRangeLimit.UNLIMITED -> com.example.core.model.DetectionRangeLimit.STANDARD_10M
+                    }
+                    visionViewModel.setRangeLimit(next)
+                },
                 onMicClick = {
                     if (uiState.isListening) {
                         assistantViewModel.stopVoiceInput()

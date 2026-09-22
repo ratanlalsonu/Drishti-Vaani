@@ -121,6 +121,7 @@ dependencies {
   implementation(libs.retrofit)
   implementation(libs.mlkit.text.recognition)
   implementation(libs.mlkit.objectdetection)
+  implementation(libs.mlkit.image.labeling)
 
 
 

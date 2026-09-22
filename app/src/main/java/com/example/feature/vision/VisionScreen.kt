@@ -1,36 +1,44 @@
 package com.example.feature.vision
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material3.Card
-
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +46,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.core.model.DetectedObject
+import com.example.core.model.DetectionRangeLimit
 import com.example.core.model.PriorityLevel
 import com.example.feature.camera.CameraManager
 import com.example.ui.theme.AccessibleBlack
@@ -61,11 +73,11 @@ fun VisionScreen(
     uiState: VisionUiState,
     onBackClick: () -> Unit,
     onQuerySurroundings: () -> Unit,
+    onRangeToggle: () -> Unit = {},
     onMicClick: () -> Unit = {},
-    onDetectionsReceived: (List<com.example.core.model.DetectedObject>, Int, Int) -> Unit,
+    onDetectionsReceived: (List<DetectedObject>, Int, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -77,11 +89,16 @@ fun VisionScreen(
         )
     }
 
+    // Keep helper's threshold updated whenever UI state range changes
+    LaunchedEffect(uiState.rangeLimit) {
+        detectorHelper.maxRangeMeters = uiState.rangeLimit.maxMeters
+    }
+
     val cameraManager = remember {
         CameraManager(context, lifecycleOwner)
     }
 
-    var previewViewRef by remember { androidx.compose.runtime.mutableStateOf<PreviewView?>(null) }
+    var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -95,7 +112,7 @@ fun VisionScreen(
             .fillMaxSize()
             .background(AccessibleBlack)
             .semantics {
-                contentDescription = "Live Vision Screen. Point phone forward. Voice announcements are active."
+                contentDescription = "Live Vision Screen. Point phone forward. Voice announcements and distance estimation active."
             }
     ) {
         // CameraX Preview View
@@ -114,8 +131,7 @@ fun VisionScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-
-        // Bounding Boxes Canvas Overlay (for sighted helpers / testers)
+        // Bounding Boxes & Distance Canvas Overlay
         Canvas(modifier = Modifier.fillMaxSize()) {
             val canvasW = size.width
             val canvasH = size.height
@@ -125,6 +141,18 @@ fun VisionScreen(
             if (previewW > 0 && previewH > 0) {
                 val scaleX = canvasW / previewW
                 val scaleY = canvasH / previewH
+
+                val textPaint = Paint().apply {
+                    color = android.graphics.Color.WHITE
+                    textSize = 34f
+                    typeface = Typeface.DEFAULT_BOLD
+                    isAntiAlias = true
+                }
+                val bgPaint = Paint().apply {
+                    color = android.graphics.Color.argb(210, 0, 0, 0)
+                    style = Paint.Style.FILL
+                    isAntiAlias = true
+                }
 
                 for (obj in uiState.detections) {
                     val box = obj.boundingBox
@@ -139,11 +167,35 @@ fun VisionScreen(
                         else -> HighContrastGreen
                     }
 
+                    // Draw bounding box
                     drawRect(
                         color = strokeColor,
                         topLeft = Offset(left, top),
                         size = Size(width, height),
                         style = Stroke(width = 6f)
+                    )
+
+                    // Draw Object Label and Distance text badge
+                    val displayText = "${obj.hindiLabel} • ~${obj.estimatedDistanceMeters}m"
+                    val textWidth = textPaint.measureText(displayText)
+                    val badgeHeight = 44f
+                    val badgeY = (top - 8f).coerceAtLeast(badgeHeight + 10f)
+
+                    drawContext.canvas.nativeCanvas.drawRoundRect(
+                        left,
+                        badgeY - badgeHeight,
+                        left + textWidth + 24f,
+                        badgeY + 8f,
+                        10f,
+                        10f,
+                        bgPaint
+                    )
+
+                    drawContext.canvas.nativeCanvas.drawText(
+                        displayText,
+                        left + 12f,
+                        badgeY - 8f,
+                        textPaint
                     )
                 }
             }
@@ -153,15 +205,16 @@ fun VisionScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 20.dp)
                 .align(Alignment.TopCenter),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Back Button
             IconButton(
                 onClick = onBackClick,
                 modifier = Modifier
-                    .size(56.dp)
+                    .size(52.dp)
                     .clip(CircleShape)
                     .background(AccessibleDarkSurface)
                     .testTag("vision_back_button")
@@ -171,88 +224,165 @@ fun VisionScreen(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = null,
                     tint = HighContrastYellow,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
             }
 
-            // Voice Command Mic button
-            IconButton(
-                onClick = onMicClick,
+            // Detection Range Selector Chip (Threshold control)
+            Surface(
+                onClick = onRangeToggle,
+                shape = RoundedCornerShape(24.dp),
+                color = AccessibleDarkSurface,
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(HighContrastCyan)
-                    .testTag("vision_mic_button")
-                    .semantics { contentDescription = "Boliye: Bol kar command dein ya dashboard par jayein" }
+                    .height(52.dp)
+                    .testTag("vision_range_chip")
+                    .semantics {
+                        contentDescription = "Current detection range threshold: ${uiState.rangeLimit.labelHi}. Tap to change."
+                    }
             ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = AccessibleBlack,
-                    modifier = Modifier.size(32.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Radar,
+                        contentDescription = null,
+                        tint = HighContrastCyan,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text(
+                            text = "RANGE LIMIT",
+                            color = HighContrastCyan,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = uiState.rangeLimit.labelHi,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
-            // Summary trigger button
-            IconButton(
-                onClick = onQuerySurroundings,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(HighContrastYellow)
-                    .testTag("vision_summary_button")
-                    .semantics { contentDescription = "What is around me? Speak scene summary" }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = AccessibleBlack,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
+            // Right Action Buttons (Mic & Scene Info)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Voice Command Mic button
+                IconButton(
+                    onClick = onMicClick,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(HighContrastCyan)
+                        .testTag("vision_mic_button")
+                        .semantics { contentDescription = "Voice Command. Speak to change range or navigate." }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = AccessibleBlack,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
 
+                // Summary trigger button
+                IconButton(
+                    onClick = onQuerySurroundings,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(HighContrastYellow)
+                        .testTag("vision_summary_button")
+                        .semantics { contentDescription = "Speak scene summary: What objects are in range?" }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = AccessibleBlack,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         }
 
-        // Bottom High-Contrast Spoken Feedback Card
+        // Bottom High-Contrast Spoken Feedback & Distance Cards
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
                 .align(Alignment.BottomCenter)
                 .semantics {
-                    contentDescription = "Latest vision announcement: ${uiState.lastVocalized}"
+                    contentDescription = "Vision feedback: ${uiState.lastVocalized}"
                 },
             colors = CardDefaults.cardColors(
                 containerColor = AccessibleDarkSurface.copy(alpha = 0.95f)
             ),
-            shape = RoundedCornerShape(14.dp)
+            shape = RoundedCornerShape(16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "LIVE VISION ASSISTANT",
                         color = HighContrastGreen,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = uiState.cameraStatus,
+                        text = "Threshold: ${uiState.rangeLimit.maxMeters.toInt()}m Max",
                         color = HighContrastCyan,
-                        fontSize = 13.sp
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
+
                 Text(
-                    text = uiState.lastVocalized.ifEmpty { "Scanning surroundings..." },
+                    text = uiState.lastVocalized.ifEmpty { "वस्तुओं और दूरी को स्कैन किया जा रहा है..." },
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
+
+                // List of detected objects with distance badges
+                if (uiState.detections.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        for (detected in uiState.detections) {
+                            val badgeBorderColor = when (detected.priority) {
+                                PriorityLevel.CRITICAL -> HighContrastRed
+                                PriorityLevel.HIGH -> HighContrastYellow
+                                else -> HighContrastGreen
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AccessibleBlack)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "${detected.hindiLabel} • ~${detected.estimatedDistanceMeters}m (${detected.position.spokenLabelHi})",
+                                    color = badgeBorderColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

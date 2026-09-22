@@ -88,24 +88,49 @@ class EmergencyViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun makeEmergencyCall() {
-        val contact = _uiState.value.primaryContact ?: return
+    fun makeEmergencyCall(specificContact: EmergencyContact? = null) {
+        val contact = specificContact ?: _uiState.value.primaryContact ?: return
         hapticManager.triggerConfirmation()
         val announcement = if (currentLanguage == AssistantLanguage.HINDI) {
-            "${contact.name} ko call lagayi ja rahi hai."
+            "${contact.name} ko turant call lagayi ja rahi hai."
         } else {
             "Calling ${contact.name} now."
         }
         ttsManager?.speak(announcement, PriorityLevel.CRITICAL)
 
         try {
-            val intent = Intent(Intent.ACTION_DIAL).apply {
+            val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.CALL_PHONE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            val action = if (hasPermission) Intent.ACTION_CALL else Intent.ACTION_DIAL
+            val intent = Intent(action).apply {
                 data = Uri.parse("tel:${contact.phoneNumber}")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            ttsManager?.speak("Could not open phone dialer: ${e.localizedMessage}", PriorityLevel.HIGH)
+            ttsManager?.speak("Could not place phone call: ${e.localizedMessage}", PriorityLevel.HIGH)
+        }
+    }
+
+    fun callContactByName(name: String) {
+        viewModelScope.launch {
+            val contact = database.emergencyContactDao().findContactByName(name)
+            if (contact != null) {
+                makeEmergencyCall(contact)
+            } else {
+                val primary = database.emergencyContactDao().getPrimaryContact()
+                if (primary != null) {
+                    val msg = if (currentLanguage == AssistantLanguage.HINDI) {
+                        "'$name' nahi mila. Primary contact ${primary.name} ko call lagane ke liye 'Call ${primary.name}' boliye."
+                    } else {
+                        "Contact '$name' not found. Say 'Call ${primary.name}' to call primary contact."
+                    }
+                    ttsManager?.speak(msg, PriorityLevel.HIGH)
+                }
+            }
         }
     }
 }

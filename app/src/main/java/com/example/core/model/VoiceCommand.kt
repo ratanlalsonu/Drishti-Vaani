@@ -12,12 +12,15 @@ sealed class VoiceCommand {
     data class FindNearby(val placeType: String) : VoiceCommand()
     data class NavigateTo(val destination: String) : VoiceCommand()
     data object Emergency : VoiceCommand()
+    data class CallContact(val targetName: String) : VoiceCommand()
+    data object CallEmergency : VoiceCommand()
     data object RepeatSpeech : VoiceCommand()
     data object StopSpeech : VoiceCommand()
     data object OpenSettings : VoiceCommand()
     data object Help : VoiceCommand()
     data object CheckBattery : VoiceCommand()
     data object CheckTime : VoiceCommand()
+    data class SetVisionRange(val limit: DetectionRangeLimit) : VoiceCommand()
     data class Unknown(val rawQuery: String) : VoiceCommand()
 }
 
