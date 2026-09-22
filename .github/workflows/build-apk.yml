@@ -23,13 +23,20 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Ensure debug keystore exists
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            echo "Generating debug.keystore for CI..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Ensure gradlew executable
         run: |
           chmod +x gradlew
           ls -la gradle/wrapper/
 
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
 
