@@ -138,8 +138,8 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
 
     private fun applyLanguage(language: AssistantLanguage) {
         val locale = when (language) {
-            AssistantLanguage.HINDI -> Locale("hi", "IN")
-            AssistantLanguage.ENGLISH_IN -> Locale("en", "IN")
+            AssistantLanguage.HINDI -> Locale.forLanguageTag("hi-IN")
+            AssistantLanguage.ENGLISH_IN -> Locale.forLanguageTag("en-IN")
             AssistantLanguage.ENGLISH_US -> Locale.US
         }
         val result = tts?.setLanguage(locale)
