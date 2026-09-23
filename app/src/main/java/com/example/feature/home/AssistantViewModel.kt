@@ -68,6 +68,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     var onLeaveVisionScreen: (() -> Unit)? = null
     var onLeaveOcrScreen: (() -> Unit)? = null
     var onOcrRepeatRequested: (() -> Unit)? = null
+    var onAiAssistantRequested: ((com.example.core.ai.AiVisionMode?, String?) -> Unit)? = null
+    var onLeaveAiScreen: (() -> Unit)? = null
 
     private val navigationBackStack = mutableListOf("home")
 
@@ -388,6 +390,66 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 speakFeedback("${command.destination} ke liye navigation load ho raha hai.", "Navigating to ${command.destination}.")
             }
 
+            is VoiceCommand.OpenAiAssistant -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("AI दृष्टि सहायक खुल गया है। आप बोलकर पूछ सकते हैं।", "Opening AI Vision Assistant. Speak your question.")
+                onAiAssistantRequested?.invoke(null, null)
+            }
+
+            is VoiceCommand.DescribeSceneAi -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("पूरे दृश्य का विवरण लिया जा रहा है...", "Describing full scene with AI...")
+                onAiAssistantRequested?.invoke(com.example.core.ai.AiVisionMode.SCENE, null)
+            }
+
+            is VoiceCommand.CheckCurrencyAi -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("करेंसी नोट जाँचा जा रहा है...", "Checking currency note with AI...")
+                onAiAssistantRequested?.invoke(com.example.core.ai.AiVisionMode.CURRENCY, null)
+            }
+
+            is VoiceCommand.CheckMedicineAi -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("दवाई की जानकारी जांची जा रही है...", "Checking medicine details with AI...")
+                onAiAssistantRequested?.invoke(com.example.core.ai.AiVisionMode.MEDICINE, null)
+            }
+
+            is VoiceCommand.CheckColorAi -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("रंग व कपड़े पहचाने जा रहे हैं...", "Checking color and outfit with AI...")
+                onAiAssistantRequested?.invoke(com.example.core.ai.AiVisionMode.COLOR, null)
+            }
+
+            is VoiceCommand.AskAi -> {
+                hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "ai_assistant") {
+                    navigationBackStack.add("ai_assistant")
+                }
+                _uiState.update { it.copy(activeScreen = "ai_assistant") }
+                speakFeedback("आपके सवाल का उत्तर खोजा जा रहा है...", "Analyzing your question with AI...")
+                onAiAssistantRequested?.invoke(com.example.core.ai.AiVisionMode.CUSTOM, command.question)
+            }
+
             is VoiceCommand.Unknown -> {
                 speakFeedback(
                     "Mujhe samajh nahi aaya: '${command.rawQuery}'. Aap bol sakte hain: 'Camera chalu karo', 'Samne kya hai', 'Padho' ya 'Help'.",
@@ -445,6 +507,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         when (screenName) {
             "vision" -> onLeaveVisionScreen?.invoke()
             "ocr" -> onLeaveOcrScreen?.invoke()
+            "ai_assistant" -> onLeaveAiScreen?.invoke()
         }
     }
 
@@ -463,6 +526,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         when (screenName) {
             "vision" -> executeCommand(VoiceCommand.StartVision)
             "ocr" -> executeCommand(VoiceCommand.ReadText)
+            "ai_assistant" -> executeCommand(VoiceCommand.OpenAiAssistant)
             "navigation" -> executeCommand(VoiceCommand.WhereAmI)
             "emergency" -> executeCommand(VoiceCommand.Emergency)
             "settings" -> executeCommand(VoiceCommand.OpenSettings)
@@ -498,6 +562,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 "home" -> "Home screen par wapas aa gaye."
                 "vision" -> "Vision screen par wapas aa gaye."
                 "ocr" -> "Text reading screen par wapas aa gaye."
+                "ai_assistant" -> "AI दृष्टि सहायक पर वापस आ गए."
                 "navigation" -> "Navigation screen par wapas aa gaye."
                 "emergency" -> "Emergency screen par wapas aa gaye."
                 "settings" -> "Settings screen par wapas aa gaye."
@@ -507,6 +572,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 "home" -> "Returned to home screen."
                 "vision" -> "Returned to vision screen."
                 "ocr" -> "Returned to text reading screen."
+                "ai_assistant" -> "Returned to AI Vision Assistant."
                 "navigation" -> "Returned to navigation screen."
                 "emergency" -> "Returned to emergency screen."
                 "settings" -> "Returned to settings screen."

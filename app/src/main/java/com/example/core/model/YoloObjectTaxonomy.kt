@@ -25,12 +25,30 @@ object YoloObjectTaxonomy {
 
     // Comprehensive dictionary mapping YOLO/COCO and ML Kit everyday labels to Hindi & Real dimensions
     private val taxonomyMap = mapOf(
-        // People & Living
+        // People & Humans (सजीव / Living: मनुष्य)
         "person" to ObjectMeta("Person", "व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.7f, typicalWidthMeters = 0.5f),
         "human" to ObjectMeta("Person", "व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.7f, typicalWidthMeters = 0.5f),
-        "man" to ObjectMeta("Man", "व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.75f, typicalWidthMeters = 0.5f),
+        "people" to ObjectMeta("People", "लोग / व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.7f, typicalWidthMeters = 1.2f),
+        "crowd" to ObjectMeta("Crowd", "भीड़ / लोग", ObjectCategory.PERSON, typicalHeightMeters = 1.7f, typicalWidthMeters = 2.0f),
+        "man" to ObjectMeta("Man", "व्यक्ति / पुरुष", ObjectCategory.PERSON, typicalHeightMeters = 1.75f, typicalWidthMeters = 0.5f),
+        "men" to ObjectMeta("Men", "लोग", ObjectCategory.PERSON, typicalHeightMeters = 1.75f, typicalWidthMeters = 1.0f),
         "woman" to ObjectMeta("Woman", "महिला", ObjectCategory.PERSON, typicalHeightMeters = 1.6f, typicalWidthMeters = 0.5f),
+        "women" to ObjectMeta("Women", "महिलाएं", ObjectCategory.PERSON, typicalHeightMeters = 1.6f, typicalWidthMeters = 1.0f),
+        "lady" to ObjectMeta("Woman", "महिला", ObjectCategory.PERSON, typicalHeightMeters = 1.6f, typicalWidthMeters = 0.5f),
+        "gentleman" to ObjectMeta("Man", "व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.75f, typicalWidthMeters = 0.5f),
         "child" to ObjectMeta("Child", "बच्चा", ObjectCategory.PERSON, typicalHeightMeters = 1.1f, typicalWidthMeters = 0.4f),
+        "children" to ObjectMeta("Children", "बच्चे", ObjectCategory.PERSON, typicalHeightMeters = 1.1f, typicalWidthMeters = 0.8f),
+        "kid" to ObjectMeta("Child", "बच्चा", ObjectCategory.PERSON, typicalHeightMeters = 1.1f, typicalWidthMeters = 0.4f),
+        "kids" to ObjectMeta("Children", "बच्चे", ObjectCategory.PERSON, typicalHeightMeters = 1.1f, typicalWidthMeters = 0.8f),
+        "boy" to ObjectMeta("Boy", "लड़का", ObjectCategory.PERSON, typicalHeightMeters = 1.3f, typicalWidthMeters = 0.4f),
+        "girl" to ObjectMeta("Girl", "लड़की", ObjectCategory.PERSON, typicalHeightMeters = 1.3f, typicalWidthMeters = 0.4f),
+        "baby" to ObjectMeta("Baby", "छोटा बच्चा", ObjectCategory.PERSON, typicalHeightMeters = 0.7f, typicalWidthMeters = 0.35f),
+        "toddler" to ObjectMeta("Toddler", "छोटा बच्चा", ObjectCategory.PERSON, typicalHeightMeters = 0.8f, typicalWidthMeters = 0.35f),
+        "face" to ObjectMeta("Person / Face", "व्यक्ति का चेहरा", ObjectCategory.PERSON, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.18f),
+        "human face" to ObjectMeta("Person / Face", "व्यक्ति का चेहरा", ObjectCategory.PERSON, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.18f),
+        "head" to ObjectMeta("Person's Head", "व्यक्ति का सिर", ObjectCategory.PERSON, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.2f),
+        "hand" to ObjectMeta("Hand", "हाथ", ObjectCategory.PERSON, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.1f),
+        "smile" to ObjectMeta("Person", "व्यक्ति", ObjectCategory.PERSON, typicalHeightMeters = 1.7f, typicalWidthMeters = 0.5f),
 
         // Vehicles & Transport (Road safety)
         "car" to ObjectMeta("Car", "कार", ObjectCategory.VEHICLE, typicalHeightMeters = 1.5f, typicalWidthMeters = 1.8f, isCriticalHazard = true),
@@ -70,10 +88,79 @@ object YoloObjectTaxonomy {
         "wardrobe" to ObjectMeta("Wardrobe", "अलमारी", ObjectCategory.FURNITURE, typicalHeightMeters = 1.8f, typicalWidthMeters = 1.0f),
         "cupboard" to ObjectMeta("Cupboard", "अलमारी", ObjectCategory.FURNITURE, typicalHeightMeters = 1.5f, typicalWidthMeters = 0.9f),
 
-        // Animals
+        // Animals & Living Creatures (सजीव / Living: पशु व जीव)
+        "animal" to ObjectMeta("Animal", "जानवर / पशु", ObjectCategory.ANIMAL, typicalHeightMeters = 0.8f, typicalWidthMeters = 1.0f),
+        "mammal" to ObjectMeta("Animal / Mammal", "जानवर / जीव", ObjectCategory.ANIMAL, typicalHeightMeters = 0.8f, typicalWidthMeters = 1.0f),
+        "vertebrate" to ObjectMeta("Animal", "जीव / जानवर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.8f, typicalWidthMeters = 0.8f),
+        "pet" to ObjectMeta("Pet Animal", "पालतू जानवर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.6f),
         "dog" to ObjectMeta("Dog", "कुत्ता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.8f),
+        "puppy" to ObjectMeta("Puppy", "पिल्ला / छोटा कुत्ता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.4f),
+        "hound" to ObjectMeta("Dog", "कुत्ता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.65f, typicalWidthMeters = 0.85f),
+        "canine" to ObjectMeta("Dog", "कुत्ता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.8f),
         "cat" to ObjectMeta("Cat", "बिल्ली", ObjectCategory.ANIMAL, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.4f),
-        "cow" to ObjectMeta("Cow", "गाय", ObjectCategory.ANIMAL, typicalHeightMeters = 1.5f, typicalWidthMeters = 1.8f, isCriticalHazard = true),
+        "kitten" to ObjectMeta("Kitten", "बिल्ली का बच्चा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.25f),
+        "feline" to ObjectMeta("Cat", "बिल्ली", ObjectCategory.ANIMAL, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.4f),
+        "cow" to ObjectMeta("Cow", "गाय (सावधानी)", ObjectCategory.ANIMAL, typicalHeightMeters = 1.5f, typicalWidthMeters = 1.8f, isCriticalHazard = true),
+        "cattle" to ObjectMeta("Cattle / Cow", "गाय या बैल", ObjectCategory.ANIMAL, typicalHeightMeters = 1.5f, typicalWidthMeters = 1.8f, isCriticalHazard = true),
+        "bull" to ObjectMeta("Bull", "बैल (सावधानी)", ObjectCategory.ANIMAL, typicalHeightMeters = 1.6f, typicalWidthMeters = 2.0f, isCriticalHazard = true),
+        "ox" to ObjectMeta("Ox", "बैल", ObjectCategory.ANIMAL, typicalHeightMeters = 1.5f, typicalWidthMeters = 1.9f, isCriticalHazard = true),
+        "buffalo" to ObjectMeta("Buffalo", "भैंस", ObjectCategory.ANIMAL, typicalHeightMeters = 1.5f, typicalWidthMeters = 2.0f, isCriticalHazard = true),
+        "goat" to ObjectMeta("Goat", "बकरी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.7f, typicalWidthMeters = 0.8f),
+        "sheep" to ObjectMeta("Sheep", "भेड़", ObjectCategory.ANIMAL, typicalHeightMeters = 0.75f, typicalWidthMeters = 0.9f),
+        "lamb" to ObjectMeta("Lamb", "भेड़ का बच्चा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.4f, typicalWidthMeters = 0.5f),
+        "horse" to ObjectMeta("Horse", "घोड़ा", ObjectCategory.ANIMAL, typicalHeightMeters = 1.6f, typicalWidthMeters = 2.0f, isCriticalHazard = true),
+        "donkey" to ObjectMeta("Donkey", "गधा", ObjectCategory.ANIMAL, typicalHeightMeters = 1.2f, typicalWidthMeters = 1.4f),
+        "monkey" to ObjectMeta("Monkey", "बंदर (सावधानी)", ObjectCategory.ANIMAL, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.5f, isCriticalHazard = true),
+        "ape" to ObjectMeta("Monkey / Ape", "बंदर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.8f, typicalWidthMeters = 0.6f),
+        "pig" to ObjectMeta("Pig", "सूअर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.9f),
+        "camel" to ObjectMeta("Camel", "ऊंट", ObjectCategory.ANIMAL, typicalHeightMeters = 2.2f, typicalWidthMeters = 2.4f, isCriticalHazard = true),
+        "elephant" to ObjectMeta("Elephant", "हाथी (सावधानी)", ObjectCategory.ANIMAL, typicalHeightMeters = 3.0f, typicalWidthMeters = 3.5f, isCriticalHazard = true),
+        "deer" to ObjectMeta("Deer", "हिरण", ObjectCategory.ANIMAL, typicalHeightMeters = 1.2f, typicalWidthMeters = 1.4f),
+        "squirrel" to ObjectMeta("Squirrel", "गिलहरी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.2f),
+        "rodent" to ObjectMeta("Rodent", "चूहा या गिलहरी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.15f),
+        "rat" to ObjectMeta("Rat", "चूहा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.18f),
+        "mouse" to ObjectMeta("Mouse / Rodent", "चूहा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.12f),
+        "rabbit" to ObjectMeta("Rabbit", "खरगोश", ObjectCategory.ANIMAL, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.3f),
+
+        // Birds (सजीव / Living: पक्षी)
+        "bird" to ObjectMeta("Bird", "पक्षी / चिड़िया", ObjectCategory.ANIMAL, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.25f),
+        "pigeon" to ObjectMeta("Pigeon", "कबूतर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.25f),
+        "dove" to ObjectMeta("Dove", "कबूतर / फाख्ता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.25f),
+        "sparrow" to ObjectMeta("Sparrow", "गौरैया / चिड़िया", ObjectCategory.ANIMAL, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.12f),
+        "crow" to ObjectMeta("Crow", "कौवा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.35f),
+        "parrot" to ObjectMeta("Parrot", "तोता", ObjectCategory.ANIMAL, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.15f),
+        "duck" to ObjectMeta("Duck", "बतख", ObjectCategory.ANIMAL, typicalHeightMeters = 0.35f, typicalWidthMeters = 0.4f),
+        "chicken" to ObjectMeta("Chicken / Hen", "मुर्गी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.35f, typicalWidthMeters = 0.35f),
+        "hen" to ObjectMeta("Hen", "मुर्गी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.35f, typicalWidthMeters = 0.35f),
+        "rooster" to ObjectMeta("Rooster", "मुर्गा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.4f, typicalWidthMeters = 0.35f),
+        "peacock" to ObjectMeta("Peacock", "मोर", ObjectCategory.ANIMAL, typicalHeightMeters = 0.8f, typicalWidthMeters = 1.2f),
+        "eagle" to ObjectMeta("Eagle", "चील / बाज", ObjectCategory.ANIMAL, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.8f),
+
+        // Insects & Aquatic (सजीव / Living: कीट-पतंग व मछली)
+        "insect" to ObjectMeta("Insect", "कीड़ा", ObjectCategory.ANIMAL, typicalHeightMeters = 0.03f, typicalWidthMeters = 0.03f),
+        "butterfly" to ObjectMeta("Butterfly", "तितली", ObjectCategory.ANIMAL, typicalHeightMeters = 0.06f, typicalWidthMeters = 0.08f),
+        "honey bee" to ObjectMeta("Honey Bee", "मधुमक्खी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.02f, typicalWidthMeters = 0.02f),
+        "bee" to ObjectMeta("Bee", "मधुमक्खी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.02f, typicalWidthMeters = 0.02f),
+        "spider" to ObjectMeta("Spider", "मकड़ी", ObjectCategory.ANIMAL, typicalHeightMeters = 0.04f, typicalWidthMeters = 0.04f),
+        "fish" to ObjectMeta("Fish", "मछली", ObjectCategory.ANIMAL, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.25f),
+
+        // Plants & Living Flora (सजीव / Living: पेड़-पौधे व हरियाली)
+        "plant" to ObjectMeta("Plant", "पौधा / गमला", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.7f, typicalWidthMeters = 0.5f),
+        "houseplant" to ObjectMeta("Houseplant", "घर का पौधा / गमला", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.5f),
+        "potted plant" to ObjectMeta("Potted Plant", "गमला व पौधा", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.5f),
+        "flowerpot" to ObjectMeta("Flowerpot / Plant", "गमला व पौधा", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.4f),
+        "tree" to ObjectMeta("Tree", "पेड़ / वृक्ष", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 3.5f, typicalWidthMeters = 2.0f, isCriticalHazard = true),
+        "trees" to ObjectMeta("Trees", "पेड़ / वृक्ष", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 3.5f, typicalWidthMeters = 3.0f),
+        "shrub" to ObjectMeta("Shrub / Bush", "झाड़ी / पौधा", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.8f, typicalWidthMeters = 0.8f),
+        "bush" to ObjectMeta("Bush", "झाड़ी", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.8f, typicalWidthMeters = 0.8f),
+        "flower" to ObjectMeta("Flower", "फूल", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.15f),
+        "flowers" to ObjectMeta("Flowers", "फूल", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.3f),
+        "rose" to ObjectMeta("Rose", "गुलाब का फूल", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.12f),
+        "grass" to ObjectMeta("Grass / Lawn", "घास", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.08f, typicalWidthMeters = 1.0f),
+        "leaf" to ObjectMeta("Leaf", "पत्ता / पत्ती", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.06f),
+        "leaves" to ObjectMeta("Leaves", "पत्तियां", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.3f),
+        "foliage" to ObjectMeta("Foliage", "हरियाली / पौधे", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 1.0f, typicalWidthMeters = 1.0f),
+        "branch" to ObjectMeta("Tree Branch", "पेड़ की डाल / टहनी", ObjectCategory.HAZARD, typicalHeightMeters = 0.5f, typicalWidthMeters = 1.2f, isCriticalHazard = true),
 
         // Electronics & Appliances
         "tv" to ObjectMeta("TV", "टीवी स्क्रीन", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.7f, typicalWidthMeters = 1.1f),
@@ -204,14 +291,66 @@ object YoloObjectTaxonomy {
         // 1. Direct match
         taxonomyMap[clean]?.let { return it }
 
-        // 2. Keyword substring matching
-        for ((key, meta) in taxonomyMap) {
-            if (clean.contains(key) || key.contains(clean)) {
-                return meta
+        // 2. Prioritize living beings semantic classification (Humans / People)
+        if (clean.contains("person") || clean.contains("human") || clean.contains("people") ||
+            clean.contains("woman") || clean.contains("man") || clean.contains("child") ||
+            clean.contains("girl") || clean.contains("boy") || clean.contains("kid") ||
+            clean.contains("baby") || clean.contains("face") || clean.contains("head") ||
+            clean.contains("smile") || clean.contains("crowd") || clean.contains("lady") ||
+            clean.contains("gentleman")
+        ) {
+            val isFemale = clean.contains("woman") || clean.contains("girl") || clean.contains("lady")
+            val isChild = clean.contains("child") || clean.contains("kid") || clean.contains("baby") || clean.contains("boy") || clean.contains("girl")
+            return when {
+                isChild -> taxonomyMap["child"] ?: ObjectMeta("Child", "बच्चा", ObjectCategory.PERSON, 1.1f, 0.4f)
+                isFemale -> taxonomyMap["woman"] ?: ObjectMeta("Woman", "महिला", ObjectCategory.PERSON, 1.6f, 0.5f)
+                else -> taxonomyMap["person"] ?: ObjectMeta("Person", "व्यक्ति", ObjectCategory.PERSON, 1.7f, 0.5f)
             }
         }
 
-        // 3. Fallback generic obstacle
+        // 3. Prioritize living animals & pets
+        if (clean.contains("dog") || clean.contains("puppy") || clean.contains("canine") || clean.contains("hound")) {
+            return taxonomyMap["dog"] ?: ObjectMeta("Dog", "कुत्ता", ObjectCategory.ANIMAL, 0.6f, 0.8f)
+        }
+        if (clean.contains("cat") || clean.contains("kitten") || clean.contains("feline")) {
+            return taxonomyMap["cat"] ?: ObjectMeta("Cat", "बिल्ली", ObjectCategory.ANIMAL, 0.3f, 0.4f)
+        }
+        if (clean.contains("cow") || clean.contains("cattle") || clean.contains("bull") || clean.contains("ox")) {
+            return taxonomyMap["cow"] ?: ObjectMeta("Cow", "गाय", ObjectCategory.ANIMAL, 1.5f, 1.8f, isCriticalHazard = true)
+        }
+        if (clean.contains("bird") || clean.contains("pigeon") || clean.contains("sparrow") ||
+            clean.contains("crow") || clean.contains("parrot") || clean.contains("duck") ||
+            clean.contains("chicken") || clean.contains("hen") || clean.contains("peacock")
+        ) {
+            return taxonomyMap["bird"] ?: ObjectMeta("Bird", "पक्षी / चिड़िया", ObjectCategory.ANIMAL, 0.2f, 0.25f)
+        }
+        if (clean.contains("animal") || clean.contains("mammal") || clean.contains("pet") ||
+            clean.contains("vertebrate") || clean.contains("carnivore") || clean.contains("fauna") ||
+            clean.contains("wildlife")
+        ) {
+            return taxonomyMap["animal"] ?: ObjectMeta("Animal", "जानवर / पशु", ObjectCategory.ANIMAL, 0.8f, 1.0f)
+        }
+
+        // 4. Prioritize living plants, trees, and flora
+        if (clean.contains("tree") || clean.contains("trees") || clean.contains("branch")) {
+            return taxonomyMap["tree"] ?: ObjectMeta("Tree", "पेड़ / वृक्ष", ObjectCategory.ENVIRONMENT, 3.5f, 2.0f, isCriticalHazard = true)
+        }
+        if (clean.contains("plant") || clean.contains("flower") || clean.contains("leaf") ||
+            clean.contains("leaves") || clean.contains("bush") || clean.contains("shrub") ||
+            clean.contains("flora") || clean.contains("grass") || clean.contains("foliage")
+        ) {
+            return taxonomyMap["plant"] ?: ObjectMeta("Plant", "पौधा / गमला", ObjectCategory.ENVIRONMENT, 0.7f, 0.5f)
+        }
+
+        // 5. Keyword matching sorted by length (longer keys first to prevent partial substrings)
+        val sortedKeys = taxonomyMap.keys.sortedByDescending { it.length }
+        for (key in sortedKeys) {
+            if (key.length >= 3 && clean.contains(key)) {
+                return taxonomyMap[key] ?: continue
+            }
+        }
+
+        // 6. Fallback generic obstacle
         return ObjectMeta(
             englishName = rawText.replaceFirstChar { it.uppercase() },
             hindiName = "रुकावट (${rawText.replaceFirstChar { it.uppercase() }})",

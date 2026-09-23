@@ -38,6 +38,44 @@ object VoiceCommandParser {
         if (normalized.isBlank()) return VoiceCommand.Unknown(rawQuery)
 
         return when {
+            // 0. AI Vision & Gemini intents
+            containsAny(
+                normalized,
+                "note pehchano", "currency pehchano", "currency check", "rupaye batao",
+                "kitne ka note hai", "note check karo", "currency", "note batao", "paisa pehchano",
+                "नोट पहचानो", "करेंसी पहचानो", "रुपया पहचानो", "सिक्का पहचानो", "कितने का नोट है",
+                "नोट चेक करो", "करेंसी चेक", "पैसे पहचानो"
+            ) -> VoiceCommand.CheckCurrencyAi
+
+            containsAny(
+                normalized,
+                "dawai pehchano", "dawai check", "dawa check", "medicine check", "expiry date",
+                "dawaai padho", "dawa padho", "medicine batao", "dawai batao", "dawa batao",
+                "दवा पहचानो", "दवाई पहचानो", "दवाई चेक", "दवा चेक करो", "एक्सपायरी डेट",
+                "दवा पढ़ो", "दवाई पढ़ो", "मेडिसिन", "दवा जांचो"
+            ) -> VoiceCommand.CheckMedicineAi
+
+            containsAny(
+                normalized,
+                "rang batao", "color batao", "kapde ka rang", "kapde ka color", "kapda kaisa hai",
+                "shirt ka rang", "pant ka rang", "रंग बताओ", "कलर बताओ", "कपड़ों का रंग",
+                "शर्ट का रंग", "कपड़े का रंग"
+            ) -> VoiceCommand.CheckColorAi
+
+            containsAny(
+                normalized,
+                "poora scene batao", "scene varnan", "describe whole room", "detailed scene",
+                "scene describe", "poore kamre ka batao", "kamra samjhao", "scene batao",
+                "पूरा दृश्य बताओ", "कमरा समझाओ", "सीन बताओ", "दृश्य का वर्णन", "कमरे का विवरण"
+            ) -> VoiceCommand.DescribeSceneAi
+
+            containsAny(
+                normalized,
+                "ai sahayak", "gemini", "ask ai", "ai assistant", "ai se pucho", "open ai",
+                "start ai", "gemini assistant", "ai camera", "एआई सहायक", "जेमिनी", "एआई से पूछो",
+                "एआई चालू करो", "एआई असिस्टेंट", "आर्टिफिशियल इंटेलिजेंस"
+            ) -> VoiceCommand.OpenAiAssistant
+
             // 1. Stop Vision / Camera intents (checked before StartVision)
             containsAny(
                 normalized,

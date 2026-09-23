@@ -12,7 +12,11 @@ import com.example.core.model.PriorityLevel
 import com.example.core.model.ProximityTier
 import com.example.core.model.SpatialPosition
 import com.example.core.model.YoloObjectTaxonomy
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import com.google.mlkit.vision.objects.ObjectDetection
@@ -36,9 +40,17 @@ class ObjectDetectorHelper(
 
     private val objectDetector = ObjectDetection.getClient(objectDetectorOptions)
 
-    // ML Kit Image Labeler (provides 400+ specific everyday YOLO-like classes)
+    // ML Kit Face Detector: instantly and reliably detects living humans (people, children, adults)
+    private val faceDetectorOptions = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .setMinFaceSize(0.12f)
+        .build()
+
+    private val faceDetector = FaceDetection.getClient(faceDetectorOptions)
+
+    // ML Kit Image Labeler (detects 400+ everyday categories including living animals, birds, pets, plants, trees)
     private val imageLabelerOptions = ImageLabelerOptions.Builder()
-        .setConfidenceThreshold(0.50f)
+        .setConfidenceThreshold(0.35f)
         .build()
 
     private val imageLabeler = ImageLabeling.getClient(imageLabelerOptions)
@@ -52,10 +64,10 @@ class ObjectDetectorHelper(
     private var lastAnalyzedTimestamp = 0L
     private val frameIntervalMs = 250L // ~4 FPS for smooth real-time response
 
-    // Periodic scene classification cache (refreshed periodically to avoid multiple TFLite tasks per frame)
+    // Periodic scene classification cache (refreshed rapidly to track living animals/plants)
     private var lastSceneLabelTimestamp = 0L
     @Volatile
-    private var cachedSceneLabels: List<String> = emptyList()
+    private var cachedSceneLabels: List<Pair<String, Float>> = emptyList()
 
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
@@ -84,30 +96,96 @@ class ObjectDetectorHelper(
         val imageWidth = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.height else imageProxy.width
         val imageHeight = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.width else imageProxy.height
 
-        // Refresh scene-level classes periodically in background
-        if (currentTimestamp - lastSceneLabelTimestamp > 1500L && !isClosed) {
+        // Refresh scene-level classes (including animals, birds, flora) periodically
+        if (currentTimestamp - lastSceneLabelTimestamp > 500L && !isClosed) {
             lastSceneLabelTimestamp = currentTimestamp
             imageLabeler.process(inputImage)
                 .addOnSuccessListener { labels ->
                     if (!isClosed) {
                         cachedSceneLabels = labels
-                            .filter { it.confidence >= 0.50f }
-                            .map { it.text }
+                            .filter { it.confidence >= 0.35f }
+                            .map { Pair(it.text, it.confidence) }
                     }
                 }
                 .addOnFailureListener {
-                    // Ignore background labeler cancel/lifecycle errors
+                    // Ignore background labeler cancel errors
                 }
         }
 
-        // Run stream object detector for real-time bounding boxes & classifications
-        objectDetector.process(inputImage)
-            .addOnSuccessListener { detectedObjects ->
-                if (isClosed) return@addOnSuccessListener
+        // Run ML Kit Object Detector and Face Detector concurrently
+        val objectTask = objectDetector.process(inputImage)
+        val faceTask = faceDetector.process(inputImage)
 
-                val results = mutableListOf<DetectedObject>()
+        Tasks.whenAllComplete(objectTask, faceTask)
+            .addOnCompleteListener {
+                if (isClosed) {
+                    try { imageProxy.close() } catch (_: Exception) {}
+                    isAnalyzingFrame = false
+                    return@addOnCompleteListener
+                }
+
+                val detectedObjects = if (objectTask.isSuccessful) objectTask.result ?: emptyList() else emptyList()
+                val detectedFaces = if (faceTask.isSuccessful) faceTask.result ?: emptyList() else emptyList()
                 val dominantLabels = cachedSceneLabels
 
+                val results = mutableListOf<DetectedObject>()
+                val matchedFaceCenters = mutableListOf<Float>()
+
+                // 1. Process Detected Living Humans (Faces)
+                for (face in detectedFaces) {
+                    val faceBox = face.boundingBox
+                    val centerXRatio = faceBox.centerX().toFloat() / imageWidth.toFloat()
+                    val position = when {
+                        centerXRatio < 0.33f -> SpatialPosition.LEFT
+                        centerXRatio > 0.66f -> SpatialPosition.RIGHT
+                        else -> SpatialPosition.CENTER
+                    }
+
+                    // A human head/face has average height ~0.24 meters
+                    val faceHeightRatio = (faceBox.height().toFloat() / imageHeight.toFloat()).coerceIn(0.015f, 1.0f)
+                    val faceWidthRatio = (faceBox.width().toFloat() / imageWidth.toFloat()).coerceIn(0.015f, 1.0f)
+
+                    val meta = YoloObjectTaxonomy.resolveLabel("person")
+                    val estimatedDistanceMeters = ((0.24f * 1.15f) / faceHeightRatio).coerceIn(0.4f, 30.0f)
+                    val roundedDistance = (kotlin.math.round(estimatedDistanceMeters * 10f) / 10f)
+
+                    if (roundedDistance <= maxRangeMeters) {
+                        matchedFaceCenters.add(centerXRatio)
+
+                        // Extrapolate approximate full body bounding box for person
+                        val bodyLeft = (faceBox.left - faceBox.width() * 0.5f).coerceAtLeast(0f)
+                        val bodyRight = (faceBox.right + faceBox.width() * 0.5f).coerceAtMost(imageWidth.toFloat())
+                        val bodyTop = faceBox.top.toFloat().coerceAtLeast(0f)
+                        val bodyBottom = (faceBox.top + faceBox.height() * 5.0f).coerceAtMost(imageHeight.toFloat())
+                        val rectF = RectF(bodyLeft, bodyTop, bodyRight, bodyBottom)
+
+                        val proximity = when {
+                            roundedDistance < 1.5f -> ProximityTier.VERY_CLOSE
+                            roundedDistance < 4.5f -> ProximityTier.NEARBY
+                            else -> ProximityTier.FAR
+                        }
+                        val priority = determinePriority(meta, proximity, roundedDistance)
+
+                        results.add(
+                            DetectedObject(
+                                label = meta.englishName,
+                                hindiLabel = meta.hindiName,
+                                confidence = 0.90f,
+                                boundingBox = rectF,
+                                position = position,
+                                proximity = proximity,
+                                priority = priority,
+                                estimatedDistanceMeters = roundedDistance,
+                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(roundedDistance, isHindi = true),
+                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(roundedDistance, isHindi = false),
+                                category = ObjectCategory.PERSON,
+                                isBeyondThreshold = false
+                            )
+                        )
+                    }
+                }
+
+                // 2. Process Detected General Objects & Obstacles
                 for ((index, obj) in detectedObjects.withIndex()) {
                     val box = obj.boundingBox
                     val rectF = RectF(
@@ -117,7 +195,6 @@ class ObjectDetectorHelper(
                         box.bottom.toFloat().coerceAtMost(imageHeight.toFloat())
                     )
 
-                    // Spatial Position (Left, Center, Right)
                     val centerX = rectF.centerX() / imageWidth.toFloat()
                     val position = when {
                         centerX < 0.33f -> SpatialPosition.LEFT
@@ -125,78 +202,129 @@ class ObjectDetectorHelper(
                         else -> SpatialPosition.CENTER
                     }
 
+                    // Avoid duplicate if a person was already identified at this horizontal location
+                    val isAlreadyPerson = matchedFaceCenters.any { kotlin.math.abs(it - centerX) < 0.20f }
+                    if (isAlreadyPerson && results.any { it.category == ObjectCategory.PERSON && it.position == position }) {
+                        continue
+                    }
+
                     val heightRatio = rectF.height() / imageHeight.toFloat()
                     val widthRatio = rectF.width() / imageWidth.toFloat()
 
-                    // Resolve best object label:
                     val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text
+
+                    // Check if dominant living labels (animals, pets, plants) apply:
+                    val livingSceneLabel = dominantLabels.firstOrNull { pair ->
+                        val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                        m.category == ObjectCategory.ANIMAL || m.category == ObjectCategory.ENVIRONMENT
+                    }
+
                     val chosenRawLabel = when {
                         !detectorLabel.isNullOrBlank() &&
                         !detectorLabel.equals("Home good", ignoreCase = true) &&
                         !detectorLabel.equals("Fashion good", ignoreCase = true) &&
                         !detectorLabel.equals("Place", ignoreCase = true) -> detectorLabel
 
+                        livingSceneLabel != null && results.none { it.label.equals(livingSceneLabel.first, ignoreCase = true) } -> {
+                            livingSceneLabel.first
+                        }
+
                         dominantLabels.isNotEmpty() -> {
-                            dominantLabels.getOrNull(index) ?: dominantLabels.first()
+                            dominantLabels.getOrNull(index)?.first ?: dominantLabels.first().first
                         }
 
                         !detectorLabel.isNullOrBlank() -> detectorLabel
                         else -> "Obstacle"
                     }
 
-                    // Match with YOLO / COCO taxonomy
                     val meta = YoloObjectTaxonomy.resolveLabel(chosenRawLabel)
-
-                    // Calculate estimated distance in meters using pinhole geometry
                     val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
                         meta = meta,
                         heightRatio = heightRatio,
                         widthRatio = widthRatio
                     )
 
-                    // Check 10-meter threshold (or user-defined range)
-                    if (estimatedDistanceMeters > maxRangeMeters) {
-                        continue
-                    }
+                    if (estimatedDistanceMeters <= maxRangeMeters) {
+                        val proximity = when {
+                            estimatedDistanceMeters < 1.5f -> ProximityTier.VERY_CLOSE
+                            estimatedDistanceMeters < 4.5f -> ProximityTier.NEARBY
+                            else -> ProximityTier.FAR
+                        }
+                        val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
 
-                    val proximity = when {
-                        estimatedDistanceMeters < 1.5f -> ProximityTier.VERY_CLOSE
-                        estimatedDistanceMeters < 4.5f -> ProximityTier.NEARBY
-                        else -> ProximityTier.FAR
-                    }
-
-                    val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
-                    val distanceDescHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true)
-                    val distanceDescEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false)
-
-                    results.add(
-                        DetectedObject(
-                            label = meta.englishName,
-                            hindiLabel = meta.hindiName,
-                            confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.70f,
-                            boundingBox = rectF,
-                            position = position,
-                            proximity = proximity,
-                            priority = priority,
-                            estimatedDistanceMeters = estimatedDistanceMeters,
-                            distanceDescriptionHi = distanceDescHi,
-                            distanceDescriptionEn = distanceDescEn,
-                            category = meta.category,
-                            isBeyondThreshold = false
+                        results.add(
+                            DetectedObject(
+                                label = meta.englishName,
+                                hindiLabel = meta.hindiName,
+                                confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.70f,
+                                boundingBox = rectF,
+                                position = position,
+                                proximity = proximity,
+                                priority = priority,
+                                estimatedDistanceMeters = estimatedDistanceMeters,
+                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
+                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
+                                category = meta.category,
+                                isBeyondThreshold = false
+                            )
                         )
-                    )
+                    }
+                }
+
+                // 3. Synthesize Living Entities (Animals, Pets, Flora) if missed by bounding box detector
+                val livingLabels = dominantLabels.filter { pair ->
+                    val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                    (m.category == ObjectCategory.ANIMAL || m.category == ObjectCategory.PERSON || m.category == ObjectCategory.ENVIRONMENT) &&
+                    results.none { it.category == m.category || it.label.equals(m.englishName, ignoreCase = true) }
+                }
+
+                for (livingPair in livingLabels.take(2)) {
+                    val meta = YoloObjectTaxonomy.resolveLabel(livingPair.first)
+                    // High confidence animal or plant in the scene
+                    if (livingPair.second >= 0.45f) {
+                        val estimatedDistanceMeters = if (livingPair.second > 0.70f) 1.8f else 2.5f
+                        if (estimatedDistanceMeters <= maxRangeMeters) {
+                            val proximity = ProximityTier.NEARBY
+                            val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
+                            val rectF = RectF(
+                                imageWidth * 0.25f,
+                                imageHeight * 0.25f,
+                                imageWidth * 0.75f,
+                                imageHeight * 0.75f
+                            )
+                            results.add(
+                                DetectedObject(
+                                    label = meta.englishName,
+                                    hindiLabel = meta.hindiName,
+                                    confidence = livingPair.second,
+                                    boundingBox = rectF,
+                                    position = SpatialPosition.CENTER,
+                                    proximity = proximity,
+                                    priority = priority,
+                                    estimatedDistanceMeters = estimatedDistanceMeters,
+                                    distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
+                                    distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
+                                    category = meta.category,
+                                    isBeyondThreshold = false
+                                )
+                            )
+                        }
+                    }
                 }
 
                 if (!isClosed) {
                     onDetectionsReady(results, imageWidth, imageHeight)
                 }
+
+                try {
+                    imageProxy.close()
+                } catch (_: Exception) {}
+                isAnalyzingFrame = false
             }
             .addOnFailureListener { exception ->
                 if (!isClosed && exception.message?.contains("cancel", ignoreCase = true) != true) {
                     onError(exception)
                 }
-            }
-            .addOnCompleteListener {
                 try {
                     imageProxy.close()
                 } catch (_: Exception) {}
@@ -210,11 +338,11 @@ class ObjectDetectorHelper(
         distanceMeters: Float
     ): PriorityLevel {
         return when {
-            // Immediate collision hazard: closer than 1.2m
             distanceMeters < 1.2f -> PriorityLevel.CRITICAL
             meta.isCriticalHazard && distanceMeters < 3.5f -> PriorityLevel.CRITICAL
             meta.isCriticalHazard -> PriorityLevel.HIGH
             meta.category == ObjectCategory.PERSON && distanceMeters < 4.0f -> PriorityLevel.HIGH
+            meta.category == ObjectCategory.ANIMAL && distanceMeters < 3.0f -> PriorityLevel.HIGH
             meta.category == ObjectCategory.VEHICLE -> PriorityLevel.HIGH
             meta.category == ObjectCategory.HAZARD -> PriorityLevel.HIGH
             proximity == ProximityTier.VERY_CLOSE -> PriorityLevel.HIGH
@@ -228,6 +356,9 @@ class ObjectDetectorHelper(
         isAnalyzingFrame = false
         try {
             objectDetector.close()
+        } catch (_: Exception) {}
+        try {
+            faceDetector.close()
         } catch (_: Exception) {}
         try {
             imageLabeler.close()

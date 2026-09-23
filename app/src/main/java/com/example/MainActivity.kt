@@ -53,6 +53,8 @@ import androidx.core.content.ContextCompat
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.PriorityLevel
 import com.example.core.model.VoiceCommand
+import com.example.feature.ai.AiAssistantScreen
+import com.example.feature.ai.AiAssistantViewModel
 import com.example.feature.emergency.EmergencyScreen
 import com.example.feature.emergency.EmergencyViewModel
 import com.example.feature.help.VoiceHelpScreen
@@ -79,6 +81,7 @@ class MainActivity : ComponentActivity() {
     private val ocrViewModel: OCRViewModel by viewModels()
     private val navigationViewModel: NavigationViewModel by viewModels()
     private val emergencyViewModel: EmergencyViewModel by viewModels()
+    private val aiViewModel: AiAssistantViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,7 +108,8 @@ class MainActivity : ComponentActivity() {
                             visionViewModel = visionViewModel,
                             ocrViewModel = ocrViewModel,
                             navigationViewModel = navigationViewModel,
-                            emergencyViewModel = emergencyViewModel
+                            emergencyViewModel = emergencyViewModel,
+                            aiViewModel = aiViewModel
                         )
                     }
                 }
@@ -120,7 +124,8 @@ fun AppRoot(
     visionViewModel: VisionViewModel,
     ocrViewModel: OCRViewModel,
     navigationViewModel: NavigationViewModel,
-    emergencyViewModel: EmergencyViewModel
+    emergencyViewModel: EmergencyViewModel,
+    aiViewModel: AiAssistantViewModel
 ) {
     val context = LocalContext.current
     val uiState by assistantViewModel.uiState.collectAsState()
@@ -135,6 +140,7 @@ fun AppRoot(
         ocrViewModel.attachTTS(assistantViewModel.ttsManager, uiState.currentLanguage)
         navigationViewModel.attachTTS(assistantViewModel.ttsManager, uiState.currentLanguage)
         emergencyViewModel.attachTTS(assistantViewModel.ttsManager, uiState.currentLanguage)
+        aiViewModel.attachTTS(assistantViewModel.ttsManager, uiState.currentLanguage)
     }
 
     // Connect global voice commands for Vision controls and session cleanup
@@ -157,6 +163,18 @@ fun AppRoot(
         assistantViewModel.onOcrRepeatRequested = {
             ocrViewModel.repeatReading()
         }
+        assistantViewModel.onAiAssistantRequested = { mode, query ->
+            if (mode != null) {
+                if (mode == com.example.core.ai.AiVisionMode.CUSTOM && !query.isNullOrBlank()) {
+                    aiViewModel.analyzeWithQuery(query)
+                } else {
+                    aiViewModel.analyzeWithMode(mode)
+                }
+            }
+        }
+        assistantViewModel.onLeaveAiScreen = {
+            aiViewModel.stopSession()
+        }
 
         // Start auto-listening immediately if audio permission is already granted
         val hasMic = ContextCompat.checkSelfPermission(
@@ -173,6 +191,7 @@ fun AppRoot(
     BackHandler(enabled = uiState.activeScreen != "home") {
         visionViewModel.stopVisionSession()
         ocrViewModel.stopReading()
+        aiViewModel.stopSession()
         assistantViewModel.ttsManager.stopSpeaking()
         assistantViewModel.navigateBack()
     }
@@ -269,6 +288,21 @@ fun AppRoot(
                     OCRScreen(
                         uiState = ocrState,
                         ocrViewModel = ocrViewModel,
+                        onBackClick = { assistantViewModel.navigateBack() },
+                        onMicClick = {
+                            if (uiState.isListening) {
+                                assistantViewModel.stopVoiceInput()
+                            } else {
+                                assistantViewModel.startVoiceInput()
+                            }
+                        }
+                    )
+                }
+                "ai_assistant" -> {
+                    val aiState by aiViewModel.uiState.collectAsState()
+                    AiAssistantScreen(
+                        uiState = aiState,
+                        aiViewModel = aiViewModel,
                         onBackClick = { assistantViewModel.navigateBack() },
                         onMicClick = {
                             if (uiState.isListening) {
