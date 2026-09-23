@@ -19,17 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -53,7 +48,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.core.ai.GeminiConfigManager
 import com.example.core.model.AssistantLanguage
 import com.example.ui.theme.AccessibleBlack
 import com.example.ui.theme.AccessibleDarkSurface
@@ -71,11 +65,6 @@ fun SettingsScreen(
 ) {
     var speechRate by remember { mutableFloatStateOf(1.0f) }
     var hapticsEnabled by remember { mutableStateOf(true) }
-
-    val context = LocalContext.current
-    val configManager = remember { GeminiConfigManager(context) }
-    var customApiKeyInput by remember { mutableStateOf(configManager.getCustomApiKey()) }
-    var apiKeySaveSuccess by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -212,167 +201,6 @@ fun SettingsScreen(
                             checkedThumbColor = HighContrastGreen,
                             checkedTrackColor = AccessibleDarkSurface
                         )
-                    )
-                }
-            }
-
-            // Google Gemini AI Assistant Configuration Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = AccessibleDarkSurface),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, HighContrastCyan)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = HighContrastCyan,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "GEMINI 3.5 FLASH AI INTEGRATION",
-                                color = HighContrastYellow,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    val isConfigured = configManager.isConfigured()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = if (isConfigured) HighContrastGreen else Color.Gray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isConfigured) "स्टेटस: सक्रिय (Gemini Vision Ready)" else "स्टेटस: ऑफलाइन मोड (ML Kit fallback)",
-                            color = if (isConfigured) HighContrastGreen else Color.Gray,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "Gemini API Key (वैकल्पिक कस्टम कुंजी):",
-                        color = Color.White,
-                        fontSize = 13.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    OutlinedTextField(
-                        value = customApiKeyInput,
-                        onValueChange = {
-                            customApiKeyInput = it
-                            apiKeySaveSuccess = false
-                        },
-                        placeholder = {
-                            Text(
-                                text = if (configManager.isConfigured()) "Pre-configured via Secrets" else "AI Studio API Key यहाँ डालें",
-                                color = Color.Gray,
-                                fontSize = 13.sp
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Key,
-                                contentDescription = null,
-                                tint = HighContrastYellow
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("gemini_api_key_input"),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = HighContrastYellow,
-                            unfocusedBorderColor = Color.Gray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                if (customApiKeyInput.isNotBlank()) {
-                                    configManager.setCustomApiKey(customApiKeyInput)
-                                } else {
-                                    configManager.clearCustomApiKey()
-                                }
-                                apiKeySaveSuccess = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = HighContrastYellow),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Text(
-                                text = "कुंजी सहेजें (Save Key)",
-                                color = AccessibleBlack,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
-
-                        if (customApiKeyInput.isNotBlank()) {
-                            Button(
-                                onClick = {
-                                    configManager.clearCustomApiKey()
-                                    customApiKeyInput = ""
-                                    apiKeySaveSuccess = false
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccessibleDarkSurface),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(48.dp)
-                            ) {
-                                Text(
-                                    text = "हटाएं",
-                                    color = HighContrastYellow,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    }
-
-                    if (apiKeySaveSuccess) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "✓ API Key सफलतापूर्वक अपडेट की गई!",
-                            color = HighContrastGreen,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "• AI क्षमताएं: पूरे कमरे/रास्ते का विस्तृत विवरण, भारतीय नोट/मुद्रा पहचान, दवाई के नाम व एक्सपायरी तिथि जांचना, और बोलकर कोई भी प्रश्न पूछना।\n• यदि इंटरनेट बंद हो, तो ऑन-डिवाइस ML Kit अपने आप काम संभाल लेता है।",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
                     )
                 }
             }

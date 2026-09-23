@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
@@ -329,73 +328,6 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // AI Gemini Vision Assistant Hero Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(78.dp)
-                        .clickable { onNavigate("ai_assistant") }
-                        .testTag("tile_ai_assistant")
-                        .semantics {
-                            contentDescription = "AI दृष्टि सहायक, Gemini 3.5 Flash: Describe scene, check currency, medicine or ask anything with voice"
-                        },
-                    colors = CardDefaults.cardColors(containerColor = AccessibleDarkSurface),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(2.dp, HighContrastCyan)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = HighContrastCyan.copy(alpha = 0.2f),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = HighContrastCyan,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "AI दृष्टि सहायक",
-                                    color = HighContrastYellow,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = HighContrastGreen.copy(alpha = 0.2f),
-                                    border = BorderStroke(1.dp, HighContrastGreen)
-                                ) {
-                                    Text(
-                                        text = "GEMINI 3.5",
-                                        color = HighContrastGreen,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "दृश्य, नोट, दवाई व बोलकर सवाल पूछें",
-                                color = Color.White.copy(alpha = 0.85f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)

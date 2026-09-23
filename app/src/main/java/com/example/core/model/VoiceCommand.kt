@@ -22,12 +22,6 @@ sealed class VoiceCommand {
     data object CheckBattery : VoiceCommand()
     data object CheckTime : VoiceCommand()
     data class SetVisionRange(val limit: DetectionRangeLimit) : VoiceCommand()
-    data object OpenAiAssistant : VoiceCommand()
-    data object DescribeSceneAi : VoiceCommand()
-    data object CheckCurrencyAi : VoiceCommand()
-    data object CheckMedicineAi : VoiceCommand()
-    data object CheckColorAi : VoiceCommand()
-    data class AskAi(val question: String) : VoiceCommand()
     data class Unknown(val rawQuery: String) : VoiceCommand()
 }
 

@@ -1,75 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <!-- Sound / Voice Waves (Vaani - Auditory Perception) -->
-    <!-- Top outer audio ripple -->
-    <path
-        android:strokeColor="#80D8FF"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:pathData="M 45,23 C 49,20 59,20 63,23" />
-
-    <!-- Top primary audio ripple -->
-    <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M 37,32 C 45,26 63,26 71,32" />
-
-    <!-- Left sonar wave -->
-    <path
-        android:strokeColor="#FFD600"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M 23,45 C 19,50 19,58 23,63" />
-
-    <!-- Right sonar wave -->
-    <path
-        android:strokeColor="#FFD600"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M 85,45 C 89,50 89,58 85,63" />
-
-    <!-- Bottom primary audio ripple -->
-    <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M 37,76 C 45,82 63,82 71,76" />
-
-    <!-- Bottom outer audio ripple -->
-    <path
-        android:strokeColor="#80D8FF"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:pathData="M 45,85 C 49,88 59,88 63,85" />
-
-    <!-- Drishti (The Assistive Vision Eye Contour) -->
-    <path
-        android:strokeColor="#FFD600"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#151C2C"
-        android:pathData="M 27,54 C 36,40 72,40 81,54 C 72,68 36,68 27,54 Z" />
-
-    <!-- Glowing Iris (Cyan AI Lens) -->
-    <path
-        android:fillColor="#00E5FF"
-        android:pathData="M 54,44 A 10,10 0 1,0 54,64 A 10,10 0 1,0 54,44 Z" />
-
-    <!-- High-Contrast Pupil (Center Core) -->
-    <path
-        android:fillColor="#0A0E17"
-        android:pathData="M 54,49 A 5,5 0 1,0 54,59 A 5,5 0 1,0 54,49 Z" />
-
-    <!-- Radiant Vision Glint / Spark -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 56,51 A 1.8,1.8 0 1,0 56,54.6 A 1.8,1.8 0 1,0 56,51 Z" />
-
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="108dp"
+        android:height="108dp"
+        android:drawable="@drawable/ic_launcher_fg_raster"
+        android:gravity="center" />
+</layer-list>
