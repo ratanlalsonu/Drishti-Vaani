@@ -23,11 +23,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -73,9 +78,13 @@ fun VisionScreen(
     uiState: VisionUiState,
     onBackClick: () -> Unit,
     onQuerySurroundings: () -> Unit,
+    onIdentifyObject: (android.graphics.Bitmap?) -> Unit = {},
+    onFrameAvailable: (android.graphics.Bitmap?) -> Unit = {},
     onRangeToggle: () -> Unit = {},
     onMicClick: () -> Unit = {},
     onDetectionsReceived: (List<DetectedObject>, Int, Int) -> Unit,
+    onStartDirectionTracking: () -> Unit = {},
+    onStopDirectionTracking: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -100,10 +109,22 @@ fun VisionScreen(
 
     var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
 
+    // Keep latest preview bitmap available for immediate voice inspection
+    LaunchedEffect(previewViewRef) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            previewViewRef?.bitmap?.let { bmp ->
+                onFrameAvailable(bmp)
+            }
+        }
+    }
+
     DisposableEffect(Unit) {
+        onStartDirectionTracking()
         onDispose {
             cameraManager.shutdown(previewViewRef)
             detectorHelper.close()
+            onStopDirectionTracking()
         }
     }
 
@@ -268,8 +289,26 @@ fun VisionScreen(
                 }
             }
 
-            // Right Action Buttons (Mic & Scene Info)
+            // Right Action Buttons (Mic, Scene Info, Identify Object)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Identify Object Button (Exact item identification)
+                IconButton(
+                    onClick = { onIdentifyObject(previewViewRef?.bitmap) },
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(HighContrastGreen)
+                        .testTag("vision_identify_button")
+                        .semantics { contentDescription = "वस्तु पहचानो। सामने रखी वस्तु का सही नाम और पहचान।" }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusStrong,
+                        contentDescription = null,
+                        tint = AccessibleBlack,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
                 // Voice Command Mic button
                 IconButton(
                     onClick = onMicClick,
@@ -303,6 +342,111 @@ fun VisionScreen(
                         contentDescription = null,
                         tint = AccessibleBlack,
                         modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+        }
+
+        // Direction Orientation & Spatial Status Chip
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = AccessibleDarkSurface.copy(alpha = 0.90f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (!uiState.isDirectionSettled) HighContrastYellow else HighContrastCyan
+            ),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 114.dp)
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .testTag("direction_status_chip")
+                .semantics {
+                    contentDescription = "Direction: ${uiState.currentDirectionHi}. ${if (uiState.hasAnnouncedCurrentDirection) "Announced once. Say what is ahead to hear again." else "Scanning direction."}"
+                }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Navigation,
+                        contentDescription = null,
+                        tint = HighContrastYellow,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = uiState.currentDirectionHi,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = if (!uiState.isDirectionSettled) {
+                        "नई दिशा स्कैन हो रही है..."
+                    } else if (uiState.hasAnnouncedCurrentDirection) {
+                        "✓ एक बार बोला गया • 'सामने क्या है' बोलें"
+                    } else {
+                        "पहचान जारी है..."
+                    },
+                    color = if (!uiState.isDirectionSettled) HighContrastYellow else HighContrastGreen,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Dedicated Prominent Action Bar: "IDENTIFY OBJECT / वस्तु पहचानो"
+        Button(
+            onClick = { onIdentifyObject(previewViewRef?.bitmap) },
+            enabled = !uiState.isIdentifyingObject,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = HighContrastGreen,
+                contentColor = AccessibleBlack
+            ),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = if (uiState.identifiedResult != null || uiState.detections.isNotEmpty()) 230.dp else 160.dp)
+                .height(54.dp)
+                .testTag("identify_object_action_button")
+                .semantics {
+                    contentDescription = "Identify exact object name and brand in front of camera"
+                }
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (uiState.isIdentifyingObject) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = AccessibleBlack,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "वस्तु की पहचान की जा रही है...",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusStrong,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "IDENTIFY OBJECT (वस्तु पहचानो)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
                     )
                 }
             }
@@ -344,10 +488,49 @@ fun VisionScreen(
                     )
                 }
 
+                // Show identified exact object card if available
+                if (uiState.identifiedResult != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = AccessibleBlack),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, HighContrastGreen)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "पहचानी गई वस्तु: ${uiState.identifiedResult.title}",
+                                    color = HighContrastGreen,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (uiState.identifiedResult.isAiVerified) "AI Vision" else "On-Device",
+                                    color = HighContrastYellow,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = uiState.identifiedResult.description,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = uiState.lastVocalized.ifEmpty { "वस्तुओं और दूरी को स्कैन किया जा रहा है..." },
                     color = Color.White,
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )

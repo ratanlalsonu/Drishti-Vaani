@@ -26,19 +26,123 @@ data class VisionUiState(
     val isAnalyzing: Boolean = false,
     val lastVocalized: String = "",
     val cameraStatus: String = "Initializing...",
-    val rangeLimit: DetectionRangeLimit = DetectionRangeLimit.STANDARD_10M
+    val rangeLimit: DetectionRangeLimit = DetectionRangeLimit.STANDARD_10M,
+    val isIdentifyingObject: Boolean = false,
+    val identifiedResult: ObjectIdentityResult? = null,
+    val currentDirectionHi: String = "सामने की दिशा",
+    val currentDirectionEn: String = "Facing Ahead",
+    val isDirectionSettled: Boolean = true,
+    val hasAnnouncedCurrentDirection: Boolean = false,
+    val lastDirectionSummary: String = ""
 )
 
 class VisionViewModel(application: Application) : AndroidViewModel(application) {
     private val database = DrishtiDatabase.getDatabase(application)
     private val throttler = SpeechThrottler()
     private val hapticManager = HapticFeedbackManager(application)
+    private val objectIdentifier = ObjectIdentifierService(application)
+    private var directionTracker: DirectionOrientationTracker? = null
 
     private val _uiState = MutableStateFlow(VisionUiState())
     val uiState: StateFlow<VisionUiState> = _uiState.asStateFlow()
 
     private var ttsManager: TTSManager? = null
     private var currentLanguage = AssistantLanguage.HINDI
+    @Volatile
+    private var latestBitmap: android.graphics.Bitmap? = null
+
+    init {
+        startDirectionTracking()
+    }
+
+    fun startDirectionTracking() {
+        if (directionTracker == null) {
+            directionTracker = DirectionOrientationTracker(
+                context = getApplication(),
+                onDirectionMoved = {
+                    // Blind person moved vision / changed direction
+                    _uiState.update {
+                        it.copy(
+                            isDirectionSettled = false,
+                            hasAnnouncedCurrentDirection = false
+                        )
+                    }
+                    throttler.clear()
+                },
+                onDirectionSettled = { _, _, hiName, enName ->
+                    // Vision settled in new direction: announce once!
+                    _uiState.update {
+                        it.copy(
+                            isDirectionSettled = true,
+                            currentDirectionHi = hiName,
+                            currentDirectionEn = enName
+                        )
+                    }
+                    announceDirectionSurroundingsOnce(force = false)
+                }
+            )
+        }
+        directionTracker?.start()
+    }
+
+    fun stopDirectionTracking() {
+        directionTracker?.stop()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopDirectionTracking()
+    }
+
+    fun updateLatestFrameBitmap(bitmap: android.graphics.Bitmap?) {
+        this.latestBitmap = bitmap
+    }
+
+    fun identifyCurrentObject(capturedBitmap: android.graphics.Bitmap? = null) {
+        val bitmapToAnalyze = capturedBitmap ?: latestBitmap
+        if (bitmapToAnalyze == null) {
+            val msg = if (currentLanguage == AssistantLanguage.HINDI) {
+                "कैमरा सामने रखें और वस्तु को लेंस के आगे लाएं।"
+            } else {
+                "Please hold the camera facing the object."
+            }
+            ttsManager?.speak(msg, PriorityLevel.HIGH)
+            return
+        }
+
+        _uiState.update { it.copy(isIdentifyingObject = true) }
+        hapticManager.triggerListeningStart()
+
+        val promptSpeak = if (currentLanguage == AssistantLanguage.HINDI) {
+            "वस्तु की पहचान की जा रही है, एक क्षण..."
+        } else {
+            "Identifying object, one moment please..."
+        }
+        ttsManager?.speak(promptSpeak, PriorityLevel.HIGH)
+
+        viewModelScope.launch {
+            try {
+                val result = objectIdentifier.identifyObject(bitmapToAnalyze, currentLanguage)
+                _uiState.update {
+                    it.copy(
+                        isIdentifyingObject = false,
+                        identifiedResult = result,
+                        lastVocalized = result.description
+                    )
+                }
+                hapticManager.triggerCommandSuccess()
+                ttsManager?.speak(result.description, PriorityLevel.HIGH)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isIdentifyingObject = false) }
+                val fallbackMsg = if (currentLanguage == AssistantLanguage.HINDI) {
+                    "वस्तु की पहचान पूरी नहीं हो सकी। कृपया वस्तु को थोड़ा और प्रकाश में लाएं।"
+                } else {
+                    "Could not identify the object. Please ensure good lighting and try again."
+                }
+                ttsManager?.speak(fallbackMsg, PriorityLevel.HIGH)
+            }
+        }
+    }
 
     fun attachTTS(tts: TTSManager, language: AssistantLanguage) {
         this.ttsManager = tts
@@ -54,6 +158,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             "Detection range set to ${range.labelEn}."
         }
         ttsManager?.speak(speech, PriorityLevel.HIGH)
+        announceDirectionSurroundingsOnce(force = true)
     }
 
     fun onDetectionsReceived(objects: List<DetectedObject>, width: Int, height: Int) {
@@ -72,62 +177,100 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        if (validRangeObjects.isEmpty()) return
+        // 1. If vision moved to this direction for the first time and has settled,
+        // announce front, left, and right ONCE:
+        if (!_uiState.value.hasAnnouncedCurrentDirection && _uiState.value.isDirectionSettled) {
+            announceDirectionSurroundingsOnce(force = false)
+            return
+        }
 
-        // Sort by priority first (CRITICAL > HIGH > NORMAL), then by distance (closest first)
-        val prioritySorted = validRangeObjects.sortedWith(
-            compareByDescending<DetectedObject> { it.priority.ordinal }
-                .thenBy { it.estimatedDistanceMeters }
-        )
-
-        for (obj in prioritySorted) {
-            if (throttler.shouldAnnounce(obj)) {
-                announceObject(obj)
-                recordDetection(obj)
-                break // Announce single most important object per cycle to prevent speech overlap
+        // 2. If already announced for this direction, DO NOT repeat automatically.
+        // Silence is maintained so the user is not disturbed repeatedly in the same direction.
+        // The ONLY safety exception: Sudden critical collision hazard very close (< 0.85m)
+        val criticalCloseHazard = validRangeObjects.firstOrNull {
+            it.priority == PriorityLevel.CRITICAL && it.estimatedDistanceMeters < 0.85f
+        }
+        if (criticalCloseHazard != null && throttler.shouldAnnounce(criticalCloseHazard)) {
+            hapticManager.triggerCriticalHazard()
+            val alert = if (currentLanguage == AssistantLanguage.HINDI) {
+                "सावधान! बहुत पास खतरा: ${criticalCloseHazard.hindiLabel}!"
+            } else {
+                "Warning! Hazard very close: ${criticalCloseHazard.label}!"
             }
+            ttsManager?.speak(alert, PriorityLevel.CRITICAL)
         }
     }
 
-    private fun announceObject(obj: DetectedObject) {
-        val pan = when (obj.position) {
-            SpatialPosition.LEFT -> -0.85f
-            SpatialPosition.RIGHT -> 0.85f
-            SpatialPosition.CENTER -> 0.0f
+    /**
+     * Announces what is in front (सामने), left (बाईं ओर), and right (दाईं ओर).
+     * If force = false, it only announces once per direction and then remains silent.
+     * If force = true (user asks by voice or taps button), it re-announces on-demand.
+     */
+    fun announceDirectionSurroundingsOnce(force: Boolean = false) {
+        if (!force && _uiState.value.hasAnnouncedCurrentDirection) {
+            // Already announced for this direction; do not repeat automatically!
+            return
         }
+
+        val validRangeObjects = _uiState.value.detections.filter {
+            it.estimatedDistanceMeters <= _uiState.value.rangeLimit.maxMeters
+        }
+
+        val centerObj = validRangeObjects.filter { it.position == SpatialPosition.CENTER }
+            .minByOrNull { it.estimatedDistanceMeters }
+        val leftObj = validRangeObjects.filter { it.position == SpatialPosition.LEFT }
+            .minByOrNull { it.estimatedDistanceMeters }
+        val rightObj = validRangeObjects.filter { it.position == SpatialPosition.RIGHT }
+            .minByOrNull { it.estimatedDistanceMeters }
 
         val speech = if (currentLanguage == AssistantLanguage.HINDI) {
-            when (obj.priority) {
-                PriorityLevel.CRITICAL -> {
-                    hapticManager.triggerCriticalHazard()
-                    "सावधान! ${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}!"
-                }
-                PriorityLevel.HIGH -> {
-                    hapticManager.triggerMediumAlert()
-                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
-                }
-                else -> {
-                    "${obj.hindiLabel}, ${obj.distanceDescriptionHi}, ${obj.position.spokenLabelHi}."
-                }
+            val parts = mutableListOf<String>()
+            if (centerObj != null) {
+                parts.add("सामने ${centerObj.hindiLabel} (${centerObj.distanceDescriptionHi})")
+            }
+            if (leftObj != null) {
+                parts.add("बाईं ओर ${leftObj.hindiLabel} (${leftObj.distanceDescriptionHi})")
+            }
+            if (rightObj != null) {
+                parts.add("दाईं ओर ${rightObj.hindiLabel} (${rightObj.distanceDescriptionHi})")
+            }
+
+            if (parts.isNotEmpty()) {
+                parts.joinToString(", ") + "।"
+            } else {
+                "${_uiState.value.rangeLimit.maxMeters.toInt()} मीटर के दायरे में रास्ता साफ है।"
             }
         } else {
-            when (obj.priority) {
-                PriorityLevel.CRITICAL -> {
-                    hapticManager.triggerCriticalHazard()
-                    "Warning! ${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}!"
-                }
-                PriorityLevel.HIGH -> {
-                    hapticManager.triggerMediumAlert()
-                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
-                }
-                else -> {
-                    "${obj.label}, ${obj.distanceDescriptionEn}, ${obj.position.spokenLabelEn}."
-                }
+            val parts = mutableListOf<String>()
+            if (centerObj != null) {
+                parts.add("Ahead: ${centerObj.label} (${centerObj.distanceDescriptionEn})")
+            }
+            if (leftObj != null) {
+                parts.add("On your left: ${leftObj.label} (${leftObj.distanceDescriptionEn})")
+            }
+            if (rightObj != null) {
+                parts.add("On your right: ${rightObj.label} (${rightObj.distanceDescriptionEn})")
+            }
+
+            if (parts.isNotEmpty()) {
+                parts.joinToString(", ") + "."
+            } else {
+                "Clear path within ${_uiState.value.rangeLimit.maxMeters.toInt()} meters."
             }
         }
 
-        _uiState.update { it.copy(lastVocalized = speech) }
-        ttsManager?.speak(speech, obj.priority, pan)
+        _uiState.update {
+            it.copy(
+                hasAnnouncedCurrentDirection = true,
+                lastVocalized = speech,
+                lastDirectionSummary = speech
+            )
+        }
+
+        hapticManager.triggerConfirmation()
+        ttsManager?.speak(speech, PriorityLevel.HIGH)
+
+        validRangeObjects.take(3).forEach { recordDetection(it) }
     }
 
     private fun recordDetection(obj: DetectedObject) {
@@ -145,29 +288,11 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Blind person explicitly asks "सामने क्या है" or "आगे क्या है" or presses the button.
+     * Re-identifies the current view on demand in the same direction.
+     */
     fun summarizeCurrentView() {
-        val currentDetections = _uiState.value.detections
-        if (currentDetections.isEmpty()) {
-            val emptyMsg = if (currentLanguage == AssistantLanguage.HINDI) {
-                "${_uiState.value.rangeLimit.maxMeters.toInt()} मीटर के दायरे में सामने कोई रुकावट नहीं है।"
-            } else {
-                "No obstacles within ${_uiState.value.rangeLimit.maxMeters.toInt()} meters ahead."
-            }
-            ttsManager?.speak(emptyMsg, PriorityLevel.HIGH)
-            return
-        }
-
-        val summary = if (currentLanguage == AssistantLanguage.HINDI) {
-            val items = currentDetections.take(3).joinToString(", ") {
-                "${it.hindiLabel} (${it.distanceDescriptionHi}, ${it.position.spokenLabelHi})"
-            }
-            "सामने स्थित है: $items."
-        } else {
-            val items = currentDetections.take(3).joinToString(", ") {
-                "${it.label} (${it.distanceDescriptionEn}, ${it.position.spokenLabelEn})"
-            }
-            "In front of you: $items."
-        }
-        ttsManager?.speak(summary, PriorityLevel.HIGH)
+        announceDirectionSurroundingsOnce(force = true)
     }
 }

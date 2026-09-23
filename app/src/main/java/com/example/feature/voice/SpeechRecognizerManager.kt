@@ -12,12 +12,17 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.core.model.AssistantLanguage
+import kotlin.math.max
+import kotlin.math.min
 
 class SpeechRecognizerManager(
     private val context: Context,
     private val onCommandReceived: (String) -> Unit,
     private val onListeningStateChanged: (Boolean) -> Unit,
-    private val onErrorOccurred: (String) -> Unit
+    private val onErrorOccurred: (String) -> Unit,
+    private val onCandidatesReceived: ((List<String>) -> Unit)? = null,
+    private val onPartialResultReceived: ((String) -> Unit)? = null,
+    private val onAudioLevelChanged: ((Float) -> Unit)? = null
 ) {
     private var speechRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -33,6 +38,7 @@ class SpeechRecognizerManager(
 
     private var currentLanguage = AssistantLanguage.HINDI
     private var isDestroyed = false
+    private var consecutiveErrors = 0
 
     init {
         mainHandler.post {
@@ -42,7 +48,7 @@ class SpeechRecognizerManager(
 
     private fun initRecognizer() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            Log.e("SpeechRecognizerManager", "Speech recognition not available on device")
+            Log.e("SpeechRecognizerManager", "Speech recognition service not available on device")
             onErrorOccurred("Voice recognition service not available")
             return
         }
@@ -51,66 +57,106 @@ class SpeechRecognizerManager(
             speechRecognizer?.destroy()
         } catch (_: Exception) {}
 
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    isListening = true
-                    onListeningStateChanged(true)
-                }
+        try {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        isListening = true
+                        consecutiveErrors = 0
+                        onListeningStateChanged(true)
+                    }
 
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onBeginningOfSpeech() {}
 
-                override fun onEndOfSpeech() {
-                    isListening = false
-                    onListeningStateChanged(false)
-                }
+                    override fun onRmsChanged(rmsdB: Float) {
+                        // Normalize -2dB..10dB to 0.0f..1.0f range for audio level pulse UI
+                        val normalized = max(0f, min(1f, (rmsdB + 2f) / 12f))
+                        onAudioLevelChanged?.invoke(normalized)
+                    }
 
-                override fun onError(error: Int) {
-                    isListening = false
-                    onListeningStateChanged(false)
+                    override fun onBufferReceived(buffer: ByteArray?) {}
 
-                    val isSilenceTimeout = error == SpeechRecognizer.ERROR_NO_MATCH ||
-                            error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    override fun onEndOfSpeech() {
+                        isListening = false
+                        onListeningStateChanged(false)
+                        onAudioLevelChanged?.invoke(0f)
+                    }
 
-                    if (isSilenceTimeout) {
-                        // Normal silence when user is not speaking; loop back seamlessly
-                        scheduleRestart(350L)
-                    } else if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
-                        try {
-                            speechRecognizer?.cancel()
-                        } catch (_: Exception) {}
-                        scheduleRestart(600L)
-                    } else {
-                        val message = when (error) {
-                            SpeechRecognizer.ERROR_NETWORK -> "Network issue in voice recognition"
-                            SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission needed"
-                            else -> "Recognition error: $error"
+                    override fun onError(error: Int) {
+                        isListening = false
+                        onListeningStateChanged(false)
+                        onAudioLevelChanged?.invoke(0f)
+
+                        val isSilenceTimeout = error == SpeechRecognizer.ERROR_NO_MATCH ||
+                                error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+
+                        if (isSilenceTimeout) {
+                            // User did not speak; loop back smoothly
+                            consecutiveErrors = 0
+                            scheduleRestart(300L)
+                        } else {
+                            consecutiveErrors++
+                            if (consecutiveErrors >= 3 || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
+                                // Reset recognizer instance if OS service is wedged
+                                recreateRecognizer()
+                                scheduleRestart(600L)
+                            } else {
+                                val message = when (error) {
+                                    SpeechRecognizer.ERROR_NETWORK -> "Network issue in voice recognition"
+                                    SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
+                                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission needed"
+                                    else -> "Recognition issue: $error"
+                                }
+                                onErrorOccurred(message)
+                                scheduleRestart(1000L)
+                            }
                         }
-                        onErrorOccurred(message)
-                        scheduleRestart(1200L)
-                    }
-                }
-
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-                    onListeningStateChanged(false)
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        val spokenText = matches[0]
-                        onCommandReceived(spokenText)
                     }
 
-                    // Loop back to auto-listening unless TTS takes over
-                    scheduleRestart(500L)
-                }
+                    override fun onResults(results: Bundle?) {
+                        isListening = false
+                        consecutiveErrors = 0
+                        onListeningStateChanged(false)
+                        onAudioLevelChanged?.invoke(0f)
 
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (!matches.isNullOrEmpty()) {
+                            if (onCandidatesReceived != null) {
+                                onCandidatesReceived.invoke(matches)
+                            } else {
+                                onCommandReceived(matches[0])
+                            }
+                        }
+
+                        // Loop back to continuous auto-listening unless TTS is active
+                        scheduleRestart(400L)
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val partials = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (!partials.isNullOrEmpty()) {
+                            val text = partials.firstOrNull()?.trim() ?: ""
+                            if (text.isNotEmpty()) {
+                                onPartialResultReceived?.invoke(text)
+                            }
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
+        } catch (e: Exception) {
+            Log.e("SpeechRecognizerManager", "Failed to create SpeechRecognizer", e)
         }
+    }
+
+    private fun recreateRecognizer() {
+        try {
+            speechRecognizer?.destroy()
+        } catch (_: Exception) {}
+        speechRecognizer = null
+        initRecognizer()
+        consecutiveErrors = 0
     }
 
     private fun scheduleRestart(delayMs: Long = 400L) {
@@ -145,9 +191,16 @@ class SpeechRecognizerManager(
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
-                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, localeTag)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                // Add additional multi-language fallback tags so bilingual Hindi/English speech is detected
+                putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN", "en-IN", "en-US"))
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+
+                // Tuning speech silence and length to prevent premature cut-off when blind user pauses
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
             }
 
             try {
@@ -157,7 +210,8 @@ class SpeechRecognizerManager(
                 try {
                     speechRecognizer?.cancel()
                 } catch (_: Exception) {}
-                scheduleRestart(800L)
+                recreateRecognizer()
+                scheduleRestart(600L)
             }
         }
     }
@@ -172,6 +226,7 @@ class SpeechRecognizerManager(
             }
             isListening = false
             onListeningStateChanged(false)
+            onAudioLevelChanged?.invoke(0f)
         }
     }
 
@@ -184,13 +239,14 @@ class SpeechRecognizerManager(
             } catch (_: Exception) {}
             isListening = false
             onListeningStateChanged(false)
+            onAudioLevelChanged?.invoke(0f)
         }
     }
 
     fun resumeAfterTTS() {
         isPausedForTTS = false
         if (isAutoListening && !isDestroyed) {
-            scheduleRestart(300L)
+            scheduleRestart(250L)
         }
     }
 
@@ -208,6 +264,10 @@ class SpeechRecognizerManager(
 
     fun setLanguage(language: AssistantLanguage) {
         currentLanguage = language
+        if (isListening) {
+            stopListening()
+            scheduleRestart(200L)
+        }
     }
 
     private fun hasRecordAudioPermission(): Boolean {

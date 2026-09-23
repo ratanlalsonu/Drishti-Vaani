@@ -25,9 +25,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -144,6 +144,9 @@ fun AppRoot(
         assistantViewModel.onVisionRangeChanged = { limit ->
             visionViewModel.setRangeLimit(limit)
         }
+        assistantViewModel.onIdentifyObjectRequested = {
+            visionViewModel.identifyCurrentObject()
+        }
 
         // Start auto-listening immediately if audio permission is already granted
         val hasMic = ContextCompat.checkSelfPermission(
@@ -196,6 +199,7 @@ fun AppRoot(
             isAutoListening = uiState.isAutoListeningActive,
             isSpeaking = assistantViewModel.ttsManager.isCurrentlySpeaking(),
             lastCommand = uiState.lastRecognizedText,
+            partialCommand = uiState.partialRecognizedText,
             activeScreen = uiState.activeScreen,
             currentLanguage = uiState.currentLanguage,
             onToggleAutoListen = {
@@ -218,6 +222,8 @@ fun AppRoot(
                         uiState = visionState,
                         onBackClick = { assistantViewModel.navigateToScreen("home") },
                         onQuerySurroundings = { visionViewModel.summarizeCurrentView() },
+                        onIdentifyObject = { bmp -> visionViewModel.identifyCurrentObject(bmp) },
+                        onFrameAvailable = { bmp -> visionViewModel.updateLatestFrameBitmap(bmp) },
                         onRangeToggle = {
                             val next = when (visionState.rangeLimit) {
                                 com.example.core.model.DetectionRangeLimit.STANDARD_10M -> com.example.core.model.DetectionRangeLimit.SHORT_5M
@@ -235,7 +241,9 @@ fun AppRoot(
                         },
                         onDetectionsReceived = { objects, width, height ->
                             visionViewModel.onDetectionsReceived(objects, width, height)
-                        }
+                        },
+                        onStartDirectionTracking = { visionViewModel.startDirectionTracking() },
+                        onStopDirectionTracking = { visionViewModel.stopDirectionTracking() }
                     )
                 }
                 "ocr" -> {
@@ -323,6 +331,7 @@ fun HandsFreeVoiceBar(
     isAutoListening: Boolean,
     isSpeaking: Boolean,
     lastCommand: String,
+    partialCommand: String = "",
     activeScreen: String,
     currentLanguage: AssistantLanguage,
     onToggleAutoListen: () -> Unit
@@ -336,7 +345,7 @@ fun HandsFreeVoiceBar(
 
     val statusIcon = when {
         !isAutoListening -> Icons.Default.MicOff
-        isSpeaking -> Icons.Default.VolumeUp
+        isSpeaking -> Icons.AutoMirrored.Filled.VolumeUp
         else -> Icons.Default.Mic
     }
 
@@ -363,6 +372,7 @@ fun HandsFreeVoiceBar(
     }
 
     val subText = when {
+        partialCommand.isNotBlank() -> "🎙️ \"$partialCommand...\""
         lastCommand.isNotBlank() -> "\"$lastCommand\""
         activeScreen == "vision" -> if (currentLanguage == AssistantLanguage.HINDI) "बोलो: 'सामने क्या है', '10 मीटर', 'Back'" else "Say: 'What is ahead', '10m', 'Back'"
         activeScreen == "ocr" -> if (currentLanguage == AssistantLanguage.HINDI) "बोलो: 'Pause', 'Resume', 'Back'" else "Say: 'Pause', 'Resume', 'Back'"

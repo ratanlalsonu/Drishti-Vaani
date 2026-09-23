@@ -56,6 +56,7 @@ fun VoiceHelpScreen(
     val commandsList = listOf(
         VoiceCommandHelpItem("Go to Dashboard", "Dashboard par le chalo / Home wapas jao", "Kahin se bhi seedhe main dashboard par wapas lene ke liye"),
         VoiceCommandHelpItem("Open Vision", "Vision par le chalo / Camera chalu karo", "Real-time camera rukavat detection shuru karein"),
+        VoiceCommandHelpItem("Identify Object", "Vastu pehchano / Yeh kaun si vastu hai / Vastu ka naam batao", "Samne rakhi kisi bhi vastu ka sahi naam, brand aur pehchan batata hai"),
         VoiceCommandHelpItem("Set Range 10 Meters", "10 meter range / Das meter", "10 meter tak ki doori ke objects detect karein (Door ki cheezein filter karein)"),
         VoiceCommandHelpItem("Set Range 5 Meters", "5 meter range / Paanch meter", "Ghar ke andar 5 meter ke daayre ke objects detect karein"),
         VoiceCommandHelpItem("What is ahead?", "Samne kya hai / Aas paas kya hai", "Samne dikh rahe objects ke naam aur unki doori suniye"),

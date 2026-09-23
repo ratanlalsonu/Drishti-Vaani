@@ -5,6 +5,7 @@ sealed class VoiceCommand {
     data object StartVision : VoiceCommand()
     data object StopVision : VoiceCommand()
     data object QuerySurroundings : VoiceCommand()
+    data object IdentifyObject : VoiceCommand()
     data object ReadText : VoiceCommand()
     data object PauseReading : VoiceCommand()
     data object ResumeReading : VoiceCommand()

@@ -26,6 +26,8 @@ data class AssistantUiState(
     val isListening: Boolean = false,
     val isAutoListeningActive: Boolean = true,
     val lastRecognizedText: String = "",
+    val partialRecognizedText: String = "",
+    val audioLevel: Float = 0f,
     val assistantFeedback: String = "",
     val currentLanguage: AssistantLanguage = AssistantLanguage.HINDI,
     val isVisionActive: Boolean = false,
@@ -40,6 +42,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     var onVisionQueryRequested: (() -> Unit)? = null
     var onVisionRangeChanged: ((com.example.core.model.DetectionRangeLimit) -> Unit)? = null
+    var onIdentifyObjectRequested: (() -> Unit)? = null
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -56,13 +59,22 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             handleSpokenCommand(spokenQuery)
         },
         onListeningStateChanged = { listening ->
-            _uiState.update { it.copy(isListening = listening) }
+            _uiState.update { it.copy(isListening = listening, audioLevel = if (listening) it.audioLevel else 0f) }
             if (listening) {
-                hapticManager.triggerConfirmation()
+                hapticManager.triggerListeningStart()
             }
         },
         onErrorOccurred = { errorMsg ->
             _uiState.update { it.copy(assistantFeedback = errorMsg) }
+        },
+        onCandidatesReceived = { candidates ->
+            handleSpokenCandidates(candidates)
+        },
+        onPartialResultReceived = { partial ->
+            _uiState.update { it.copy(partialRecognizedText = partial) }
+        },
+        onAudioLevelChanged = { level ->
+            _uiState.update { it.copy(audioLevel = level) }
         }
     )
 
@@ -86,8 +98,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun triggerStartupGreeting() {
         val greeting = when (_uiState.value.currentLanguage) {
-            AssistantLanguage.HINDI -> "नमस्ते. मैं दृष्टि वाणी हूँ, आपका विजुअल असिस्टेंस साथी. विजन शुरू करने के लिए 'स्टार्ट विजन' बोलिये, या 'हेल्प' बोलिये."
-            else -> "Namaste. I am Drishti Vaani, your visual assistance companion. Say 'Start Vision' to begin, or say 'Help'."
+            AssistantLanguage.HINDI -> "नमस्ते. मैं दृष्टि वाणी हूँ, आपका विजुअल साथी. कैमरा शुरू करने के लिए 'कैमरा चालू करो' या 'हेल्प' बोलिये."
+            else -> "Namaste. I am Drishti Vaani, your visual companion. Say 'Start Vision' or 'Help'."
         }
         _uiState.update { it.copy(assistantFeedback = greeting) }
         ttsManager.speak(greeting, PriorityLevel.HIGH)
@@ -112,10 +124,20 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         speechManager.stopListening()
     }
 
-    fun handleSpokenCommand(spokenText: String) {
-        _uiState.update { it.copy(lastRecognizedText = spokenText) }
-        val command = VoiceCommandParser.parse(spokenText)
+    fun handleSpokenCandidates(candidates: List<String>) {
+        val bestText = candidates.firstOrNull() ?: ""
+        _uiState.update { it.copy(lastRecognizedText = bestText, partialRecognizedText = "") }
+        val command = VoiceCommandParser.parseCandidates(candidates)
+        if (command is VoiceCommand.Unknown) {
+            hapticManager.triggerNotUnderstood()
+        } else {
+            hapticManager.triggerCommandSuccess()
+        }
         executeCommand(command)
+    }
+
+    fun handleSpokenCommand(spokenText: String) {
+        handleSpokenCandidates(listOf(spokenText))
     }
 
     fun executeCommand(command: VoiceCommand) {
@@ -265,6 +287,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 speakFeedback("Surroundings scan kiye ja rahe hain. Camera samne rakhein.", "Scanning surroundings. Keep camera steady.")
             }
 
+            is VoiceCommand.IdentifyObject -> {
+                hapticManager.triggerConfirmation()
+                if (_uiState.value.activeScreen != "vision") {
+                    _uiState.update { it.copy(isVisionActive = true, activeScreen = "vision") }
+                }
+                onIdentifyObjectRequested?.invoke()
+            }
+
             is VoiceCommand.PauseReading -> {
                 speakFeedback("Reading paused.", "Reading paused.")
             }
@@ -280,8 +310,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             is VoiceCommand.Unknown -> {
                 speakFeedback(
-                    "Mujhe samajh nahi aaya: '${command.rawQuery}'. Kripya 'Start Vision', 'Read Text' ya 'Help' bolein.",
-                    "Did not understand: '${command.rawQuery}'. Please say 'Start Vision', 'Read Text' or 'Help'."
+                    "Mujhe samajh nahi aaya: '${command.rawQuery}'. Aap bol sakte hain: 'Camera chalu karo', 'Samne kya hai', 'Padho' ya 'Help'.",
+                    "Did not understand: '${command.rawQuery}'. Please say 'Start Vision', 'What is ahead', 'Read Text' or 'Help'."
                 )
             }
         }

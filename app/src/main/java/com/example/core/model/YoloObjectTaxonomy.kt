@@ -96,7 +96,106 @@ object YoloObjectTaxonomy {
         "fashion good" to ObjectMeta("Clothing Item", "वस्त्र या सामान", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.5f),
         "food" to ObjectMeta("Food", "खाद्य सामग्री", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.2f),
         "place" to ObjectMeta("Structure", "संरचना / दीवार", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 2.0f, typicalWidthMeters = 2.0f),
-        "plant" to ObjectMeta("Plant", "पौधा / गमला", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.7f, typicalWidthMeters = 0.5f)
+        "plant" to ObjectMeta("Plant", "पौधा / गमला", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.7f, typicalWidthMeters = 0.5f),
+
+        // Currency & Money
+        "money" to ObjectMeta("Currency / Money", "रुपया / पैसे", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.15f),
+        "banknote" to ObjectMeta("Currency Note", "रुपये का नोट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.15f),
+        "cash" to ObjectMeta("Cash Money", "रुपया", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.15f),
+        "coin" to ObjectMeta("Coin", "सिक्का", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.03f, typicalWidthMeters = 0.03f),
+        "wallet" to ObjectMeta("Wallet", "पर्स / बटुआ", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.1f),
+        "purse" to ObjectMeta("Purse", "पर्स", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.25f),
+
+        // Personal Items & Wearables
+        "glasses" to ObjectMeta("Glasses", "चश्मा", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.14f),
+        "spectacles" to ObjectMeta("Spectacles", "चश्मा", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.14f),
+        "sunglasses" to ObjectMeta("Sunglasses", "धूप का चश्मा", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.14f),
+        "watch" to ObjectMeta("Wristwatch", "हाथ की घड़ी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.06f, typicalWidthMeters = 0.05f),
+        "clock" to ObjectMeta("Clock", "दीवार घड़ी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.3f),
+        "key" to ObjectMeta("Key", "चाबी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.06f, typicalWidthMeters = 0.03f),
+        "keys" to ObjectMeta("Keys", "चाबियां", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.05f),
+        "lock" to ObjectMeta("Lock", "ताला", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.07f),
+        "shoe" to ObjectMeta("Shoe", "जूता", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.28f),
+        "footwear" to ObjectMeta("Footwear", "जूता या चप्पल", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.28f),
+        "slipper" to ObjectMeta("Slipper", "चप्पल", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.25f),
+        "belt" to ObjectMeta("Belt", "बेल्ट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.3f),
+        "hat" to ObjectMeta("Cap / Hat", "टोपी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.2f),
+        "cap" to ObjectMeta("Cap", "टोपी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.2f),
+
+        // Medicines & Health
+        "medicine" to ObjectMeta("Medicine", "दवा", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.08f),
+        "pill" to ObjectMeta("Medicine Tablet", "दवा की गोली", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.02f, typicalWidthMeters = 0.02f),
+        "tablet" to ObjectMeta("Medicine Tablet", "दवा की गोली", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.1f),
+        "syrup" to ObjectMeta("Syrup Bottle", "दवा की सिरप", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.06f),
+        "bandage" to ObjectMeta("Bandage", "पट्टी / बैंडेज", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.1f),
+        "thermometer" to ObjectMeta("Thermometer", "थर्मामीटर", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.03f),
+
+        // Kitchen & Dining Utensils
+        "plate" to ObjectMeta("Plate / Thali", "थाली / प्लेट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.03f, typicalWidthMeters = 0.25f),
+        "dish" to ObjectMeta("Dish", "प्लेट / बर्तन", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.25f),
+        "spoon" to ObjectMeta("Spoon", "चम्मच", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.04f),
+        "fork" to ObjectMeta("Fork", "कांटा चम्मच", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.04f),
+        "knife" to ObjectMeta("Knife", "चाकू (सावधानी)", ObjectCategory.HAZARD, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.04f, isCriticalHazard = true),
+        "bowl" to ObjectMeta("Bowl / Katori", "कटोरी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.12f),
+        "water bottle" to ObjectMeta("Water Bottle", "पानी की बोतल", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.08f),
+        "glass" to ObjectMeta("Drinking Glass", "पानी का गिलास", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.14f, typicalWidthMeters = 0.08f),
+        "mug" to ObjectMeta("Mug", "मग", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.1f),
+        "pan" to ObjectMeta("Pan / Tawa", "तवा / कड़ाही", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.3f),
+        "pot" to ObjectMeta("Pot", "पतीला / बर्तन", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.25f),
+
+        // Food & Edibles
+        "apple" to ObjectMeta("Apple", "सेब", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.08f),
+        "banana" to ObjectMeta("Banana", "केला", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.04f, typicalWidthMeters = 0.18f),
+        "orange" to ObjectMeta("Orange", "संतरा", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.08f, typicalWidthMeters = 0.08f),
+        "fruit" to ObjectMeta("Fruit", "फल", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.1f),
+        "vegetable" to ObjectMeta("Vegetable", "सब्जी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.12f),
+        "bread" to ObjectMeta("Bread / Roti", "रोटी / ब्रेड", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.15f),
+        "biscuit" to ObjectMeta("Biscuit", "बिस्कुट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.12f),
+        "cookie" to ObjectMeta("Biscuit / Cookie", "बिस्कुट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.08f),
+        "tea" to ObjectMeta("Tea", "चाय", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.08f),
+        "coffee" to ObjectMeta("Coffee", "कॉफी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.1f, typicalWidthMeters = 0.08f),
+        "milk" to ObjectMeta("Milk", "दूध", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.2f, typicalWidthMeters = 0.1f),
+
+        // Stationery & Office Items
+        "book" to ObjectMeta("Book", "किताब", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.18f),
+        "notebook" to ObjectMeta("Notebook", "कॉपी / नोटबुक", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.25f, typicalWidthMeters = 0.18f),
+        "pen" to ObjectMeta("Pen", "कलम / पेन", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.14f, typicalWidthMeters = 0.015f),
+        "pencil" to ObjectMeta("Pencil", "पेंसिल", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.16f, typicalWidthMeters = 0.01f),
+        "scissors" to ObjectMeta("Scissors", "कैंची (सावधानी)", ObjectCategory.HAZARD, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.08f, isCriticalHazard = true),
+        "paper" to ObjectMeta("Paper / Document", "कागज़ / दस्तावेज़", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.21f),
+        "document" to ObjectMeta("Document", "दस्तावेज़", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.21f),
+        "newspaper" to ObjectMeta("Newspaper", "अखबार", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.35f, typicalWidthMeters = 0.28f),
+
+        // Electronics & Accessories
+        "mouse" to ObjectMeta("Computer Mouse", "माउस", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.04f, typicalWidthMeters = 0.06f),
+        "keyboard" to ObjectMeta("Keyboard", "कीबोर्ड", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.03f, typicalWidthMeters = 0.45f),
+        "remote" to ObjectMeta("Remote Control", "रिमोट कंट्रोल", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.05f),
+        "charger" to ObjectMeta("Phone Charger", "चार्जर", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.06f, typicalWidthMeters = 0.04f),
+        "cable" to ObjectMeta("Cable / Wire", "केबल / तार", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.02f, typicalWidthMeters = 0.3f),
+        "headphones" to ObjectMeta("Headphones", "हेडफोन", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.16f),
+        "earphones" to ObjectMeta("Earphones", "इयरफोन", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.05f, typicalWidthMeters = 0.05f),
+        "power bank" to ObjectMeta("Power Bank", "पावर बैंक", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.07f),
+        "plug" to ObjectMeta("Electric Plug", "बिजली का प्लग", ObjectCategory.HAZARD, typicalHeightMeters = 0.06f, typicalWidthMeters = 0.06f, isCriticalHazard = true),
+        "switch" to ObjectMeta("Switch Board", "स्विच बोर्ड", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.12f),
+        "fan" to ObjectMeta("Fan", "पंखा", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.5f),
+        "light" to ObjectMeta("Light / Bulb", "बल्ब / लाइट", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.12f, typicalWidthMeters = 0.06f),
+        "torch" to ObjectMeta("Torch", "टॉर्च", ObjectCategory.ELECTRONICS, typicalHeightMeters = 0.15f, typicalWidthMeters = 0.04f),
+
+        // Household & Hygiene
+        "towel" to ObjectMeta("Towel", "तौलिया", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.6f, typicalWidthMeters = 0.4f),
+        "toothbrush" to ObjectMeta("Toothbrush", "टूथब्रश", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.02f),
+        "toothpaste" to ObjectMeta("Toothpaste", "टूथपेस्ट", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.05f),
+        "soap" to ObjectMeta("Soap", "साबुन", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.04f, typicalWidthMeters = 0.08f),
+        "comb" to ObjectMeta("Comb", "कंघी", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.18f, typicalWidthMeters = 0.04f),
+        "mirror" to ObjectMeta("Mirror", "शीशा / दर्पण", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.5f, typicalWidthMeters = 0.4f),
+        "dustbin" to ObjectMeta("Dustbin", "कूड़ेदान", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.4f, typicalWidthMeters = 0.3f),
+        "trash can" to ObjectMeta("Dustbin", "कूड़ेदान", ObjectCategory.EVERYDAY, typicalHeightMeters = 0.4f, typicalWidthMeters = 0.3f),
+        "pillow" to ObjectMeta("Pillow", "तकिया", ObjectCategory.FURNITURE, typicalHeightMeters = 0.3f, typicalWidthMeters = 0.5f),
+        "blanket" to ObjectMeta("Blanket", "कंबल / चादर", ObjectCategory.FURNITURE, typicalHeightMeters = 0.4f, typicalWidthMeters = 0.5f),
+        "curtain" to ObjectMeta("Curtain", "पर्दा", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 1.8f, typicalWidthMeters = 1.0f),
+        "window" to ObjectMeta("Window", "खिड़की", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 1.2f, typicalWidthMeters = 1.0f),
+        "gate" to ObjectMeta("Gate", "गेट / फाटक", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 2.0f, typicalWidthMeters = 1.5f),
+        "wall" to ObjectMeta("Wall", "दीवार", ObjectCategory.ENVIRONMENT, typicalHeightMeters = 2.5f, typicalWidthMeters = 3.0f)
     )
 
     fun resolveLabel(rawText: String): ObjectMeta {

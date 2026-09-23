@@ -199,6 +199,29 @@ fun SettingsScreen(
                 }
             }
 
+            // Improved Speech Recognition Feature Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = AccessibleDarkSurface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "IMPROVED SPEECH RECOGNITION (उन्नत आवाज़ पहचान)",
+                        color = HighContrastGreen,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "• द्विभाषी समर्थन (Bilingual): शुद्ध हिंदी, हिंग्लिश और अंग्रेज़ी में प्राकृतिक कमांड पहचान।\n• मल्टी-कैंडिडेट पार्सिंग: शोर में भी 5 अलग-अलग वॉइस अनुमानों से सही कमांड चुनना।\n• रियल-टाइम फीडबैक: बोलते समय स्क्रीन पर लाइव शब्द और ऑडियो वेवफॉर्म।\n• स्मार्ट टाइमिंग: बोलते समय बीच में रुकने पर माइक तुरंत बंद नहीं होता।\n• स्पर्श संकेत (Haptics): माइक ऑन होने और कमांड समझने पर विशेष वाइब्रेशन।",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+
             // Academic Project Information Card
             Card(
                 modifier = Modifier.fillMaxWidth(),

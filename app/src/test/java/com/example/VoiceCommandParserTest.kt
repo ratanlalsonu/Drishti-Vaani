@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.core.model.DetectionRangeLimit
 import com.example.core.model.VoiceCommand
 import com.example.feature.voice.VoiceCommandParser
 import org.junit.Assert.assertEquals
@@ -35,6 +36,9 @@ class VoiceCommandParserTest {
         assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("start vision"))
         assertEquals(VoiceCommand.StopVision, VoiceCommandParser.parse("stop vision"))
         assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("what is in front of me"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("identify this object"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("what is this item"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("name this object"))
         assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("read this"))
         assertEquals(VoiceCommand.WhereAmI, VoiceCommandParser.parse("where am I"))
         assertEquals(VoiceCommand.Emergency, VoiceCommandParser.parse("emergency"))
@@ -58,9 +62,100 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun testDevanagariHindiCommands() {
+        // Blind user speaking pure Hindi (Devanagari transcription from hi-IN ASR)
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("कैमरा चालू करो"))
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("कैमरा खोलो"))
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("विजन शुरू करो"))
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("कैमरा"))
+
+        assertEquals(VoiceCommand.StopVision, VoiceCommandParser.parse("कैमरा बंद करो"))
+        assertEquals(VoiceCommand.StopVision, VoiceCommandParser.parse("विजन बंद करो"))
+
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("सामने क्या है"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("वस्तु पहचानो"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("यह कौन सी वस्तु है"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("वस्तु का नाम बताओ"))
+        assertEquals(VoiceCommand.IdentifyObject, VoiceCommandParser.parse("चीज पहचानो"))
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("आगे क्या है"))
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("क्या दिख रहा है"))
+
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("किताब पढ़ो"))
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("लिखा हुआ पढ़ो"))
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("क्या लिखा है"))
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("पढ़ो"))
+
+        assertEquals(VoiceCommand.WhereAmI, VoiceCommandParser.parse("मैं कहाँ हूँ"))
+        assertEquals(VoiceCommand.WhereAmI, VoiceCommandParser.parse("मेरी लोकेशन"))
+        assertEquals(VoiceCommand.WhereAmI, VoiceCommandParser.parse("रास्ता दिखाओ"))
+
+        assertEquals(VoiceCommand.Emergency, VoiceCommandParser.parse("मदद करो"))
+        assertEquals(VoiceCommand.Emergency, VoiceCommandParser.parse("बचाओ"))
+        assertEquals(VoiceCommand.Emergency, VoiceCommandParser.parse("आपातकाल"))
+
+        assertEquals(VoiceCommand.CallEmergency, VoiceCommandParser.parse("112 पर कॉल करो"))
+        assertEquals(VoiceCommand.CallEmergency, VoiceCommandParser.parse("इमरजेंसी कॉल"))
+
+        val papaCall = VoiceCommandParser.parse("पापा को कॉल करो")
+        assertTrue(papaCall is VoiceCommand.CallContact)
+        assertEquals("पापा", (papaCall as VoiceCommand.CallContact).targetName)
+
+        assertEquals(VoiceCommand.GoHome, VoiceCommandParser.parse("वापस जाओ"))
+        assertEquals(VoiceCommand.GoHome, VoiceCommandParser.parse("डैशबोर्ड"))
+        assertEquals(VoiceCommand.GoHome, VoiceCommandParser.parse("होम स्क्रीन"))
+
+        assertEquals(VoiceCommand.CheckBattery, VoiceCommandParser.parse("बैटरी कितनी है"))
+        assertEquals(VoiceCommand.CheckTime, VoiceCommandParser.parse("कितने बजे हैं"))
+        assertEquals(VoiceCommand.CheckTime, VoiceCommandParser.parse("समय क्या है"))
+
+        assertEquals(VoiceCommand.RepeatSpeech, VoiceCommandParser.parse("फिर से बोलो"))
+        assertEquals(VoiceCommand.StopSpeech, VoiceCommandParser.parse("चुप हो जाओ"))
+        assertEquals(VoiceCommand.OpenSettings, VoiceCommandParser.parse("सेटिंग्स खोलो"))
+        assertEquals(VoiceCommand.Help, VoiceCommandParser.parse("मदद"))
+
+        assertEquals(VoiceCommand.SetVisionRange(DetectionRangeLimit.STANDARD_10M), VoiceCommandParser.parse("10 मीटर"))
+        assertEquals(VoiceCommand.SetVisionRange(DetectionRangeLimit.SHORT_5M), VoiceCommandParser.parse("5 मीटर"))
+        assertEquals(VoiceCommand.SetVisionRange(DetectionRangeLimit.UNLIMITED), VoiceCommandParser.parse("सब दूरी"))
+    }
+
+    @Test
+    fun testPunctuationAndColloquialSpeech() {
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("सामने क्या है?"))
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("किताब पढ़ो।"))
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("Start vision!"))
+        assertEquals(VoiceCommand.GoHome, VoiceCommandParser.parse("Home."))
+        assertEquals(VoiceCommand.Emergency, VoiceCommandParser.parse("Help me!"))
+
+        // Colloquial Hinglish variations
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("camera chalu"))
+        assertEquals(VoiceCommand.StartVision, VoiceCommandParser.parse("camera on karo"))
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("samne kya h"))
+        assertEquals(VoiceCommand.QuerySurroundings, VoiceCommandParser.parse("aage kya h"))
+        assertEquals(VoiceCommand.ReadText, VoiceCommandParser.parse("kya likha h"))
+        assertEquals(VoiceCommand.WhereAmI, VoiceCommandParser.parse("kahan hu"))
+    }
+
+    @Test
+    fun testCandidatesParsing() {
+        // First candidate is noisy/unrecognized, second candidate is recognized
+        val cmd = VoiceCommandParser.parseCandidates(listOf("कुछ आवाज", "कैमरा चालू करो"))
+        assertEquals(VoiceCommand.StartVision, cmd)
+
+        val cmd2 = VoiceCommandParser.parseCandidates(listOf("noise123", "samne kya hai"))
+        assertEquals(VoiceCommand.QuerySurroundings, cmd2)
+
+        val unknownCmd = VoiceCommandParser.parseCandidates(listOf("random noise", "bla bla"))
+        assertTrue(unknownCmd is VoiceCommand.Unknown)
+    }
+
+    @Test
     fun testNearbyFacilityParsing() {
         val cmd = VoiceCommandParser.parse("find nearest hospital")
         assertTrue(cmd is VoiceCommand.FindNearby)
         assertEquals("hospital", (cmd as VoiceCommand.FindNearby).placeType)
+
+        val cmdHindi = VoiceCommandParser.parse("पास का अस्पताल")
+        assertTrue(cmdHindi is VoiceCommand.FindNearby)
+        assertEquals("hospital", (cmdHindi as VoiceCommand.FindNearby).placeType)
     }
 }

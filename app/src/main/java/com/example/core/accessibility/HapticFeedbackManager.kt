@@ -17,6 +17,38 @@ class HapticFeedbackManager(context: Context) {
 
     var isHapticsEnabled: Boolean = true
 
+    fun triggerListeningStart() {
+        if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(25, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(25)
+        }
+    }
+
+    fun triggerCommandSuccess() {
+        if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val timings = longArrayOf(0, 40, 50, 60)
+            val amplitudes = intArrayOf(0, 160, 0, 200)
+            vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(longArrayOf(0, 40, 50, 60), -1)
+        }
+    }
+
+    fun triggerNotUnderstood() {
+        if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(100, 120))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(100)
+        }
+    }
+
     fun triggerConfirmation() {
         if (!isHapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

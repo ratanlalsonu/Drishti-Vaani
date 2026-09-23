@@ -1,5 +1,7 @@
 package com.example.feature.home
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Emergency
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.NearMe
@@ -33,9 +36,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -147,13 +152,30 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = uiState.assistantFeedback.ifEmpty { "Aap bol sakte hain 'Start Vision', 'Read Text', 'Where am I' ya 'Help'." },
+                            text = uiState.assistantFeedback.ifEmpty { "Aap bol sakte hain: 'कैमरा चालू करो', 'सामने क्या है', 'किताब पढ़ो', या 'मदद'." },
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             lineHeight = 24.sp
                         )
-                        if (uiState.lastRecognizedText.isNotEmpty()) {
+                        if (uiState.partialRecognizedText.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = HighContrastCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "लाइव: \"${uiState.partialRecognizedText}...\"",
+                                    color = HighContrastCyan,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else if (uiState.lastRecognizedText.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "You said: \"${uiState.lastRecognizedText}\"",
@@ -165,7 +187,13 @@ fun HomeScreen(
                 }
             }
 
-            // Central Massive Microphone Voice Activation Tile
+            // Central Massive Microphone Voice Activation Tile with Audio Pulse Animation
+            val audioScale by animateFloatAsState(
+                targetValue = if (uiState.isListening) 1.0f + (uiState.audioLevel * 0.22f) else 1.0f,
+                animationSpec = tween(durationMillis = 100),
+                label = "audio_scale"
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -177,26 +205,44 @@ fun HomeScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(130.dp)
-                            .clip(CircleShape)
-                            .background(if (uiState.isListening) HighContrastGreen else HighContrastYellow)
-                            .clickable(onClick = onMicClick)
-                            .testTag("voice_command_trigger")
-                            .semantics {
-                                contentDescription = if (uiState.isListening) {
-                                    "Hands free microphone active and listening. Tap to pause."
-                                } else {
-                                    "Hands free microphone ready. Just speak anytime, no tap needed."
-                                }
-                            },
+                            .size(144.dp)
+                            .scale(audioScale),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (uiState.isListening) Icons.Default.Mic else Icons.Default.MicOff,
-                            contentDescription = null,
-                            tint = AccessibleBlack,
-                            modifier = Modifier.size(68.dp)
-                        )
+                        // Outer glowing audio ring when listening
+                        if (uiState.isListening) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(CircleShape)
+                                    .background(HighContrastGreen.copy(alpha = 0.20f + (uiState.audioLevel * 0.40f)))
+                            )
+                        }
+
+                        // Main action microphone button
+                        Box(
+                            modifier = Modifier
+                                .size(122.dp)
+                                .clip(CircleShape)
+                                .background(if (uiState.isListening) HighContrastGreen else HighContrastYellow)
+                                .clickable(onClick = onMicClick)
+                                .testTag("voice_command_trigger")
+                                .semantics {
+                                    contentDescription = if (uiState.isListening) {
+                                        "Hands free microphone active and listening. Tap to pause."
+                                    } else {
+                                        "Hands free microphone ready. Just speak anytime, no tap needed."
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.isListening) Icons.Default.Mic else Icons.Default.MicOff,
+                                contentDescription = null,
+                                tint = AccessibleBlack,
+                                modifier = Modifier.size(64.dp)
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
@@ -225,7 +271,7 @@ fun HomeScreen(
                 ) {
                     AccessibleTile(
                         title = "Start Vision",
-                        subtitle = "कैमरा सहायता",
+                        subtitle = "वस्तु पहचान व बाधाएं",
                         icon = Icons.Default.Camera,
                         accentColor = HighContrastYellow,
                         modifier = Modifier.weight(1f),
