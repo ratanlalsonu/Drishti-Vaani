@@ -13,19 +13,17 @@ class DrishtiApplication : Application() {
 
     private fun ensureMlKitStorageDirectories() {
         try {
-            // ML Kit native perception/acceleration analytics expects this directory to exist.
-            // Pre-creating the directory and storage file prevents native proto_data_store.cc:36
-            // "No such file or directory" error on startup.
             val accelerationDir = File(filesDir, "com.google.mlkit.acceleration")
             if (!accelerationDir.exists()) {
                 accelerationDir.mkdirs()
             }
-            val analyticsStorage = File(accelerationDir, "com.google.perception.acceleration_analytics_storage_v2.")
-            if (!analyticsStorage.exists()) {
-                analyticsStorage.createNewFile()
+            // Do not keep a 0-byte dummy file which corrupts native protobuf parsing
+            val dummyFile = File(accelerationDir, "com.google.perception.acceleration_analytics_storage_v2.")
+            if (dummyFile.exists() && dummyFile.length() == 0L) {
+                dummyFile.delete()
             }
         } catch (e: Exception) {
-            Log.w("DrishtiApplication", "Could not pre-initialize ML Kit acceleration storage: ${e.message}")
+            Log.w("DrishtiApplication", "Could not ensure ML Kit acceleration directory: ${e.message}")
         }
     }
 }
