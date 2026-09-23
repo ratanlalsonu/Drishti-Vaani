@@ -138,68 +138,7 @@ object VoiceCommandParser {
             ) || normalized == "padho" || normalized == "read" || normalized == "पढ़ो" || normalized == "रीड" -> VoiceCommand.ReadText
 
             // 7. Direct Voice-Activated Phone Calling (Emergency or Contact)
-            containsAny(
-                normalized,
-                "call emergency", "emergency call", "112 par call", "call 112", "call 100",
-                "100 par call", "emergency ko call", "police ko call", "ambulance ko call",
-                "इमरजेंसी कॉल", "112 पर कॉल", "100 पर कॉल", "कॉल 112", "कॉल 100",
-                "पुलिस को फोन", "इमरजेंसी को कॉल", "112 लगाओ", "100 लगाओ"
-            ) || normalized == "112" || normalized == "100" -> VoiceCommand.CallEmergency
-
-            // Direct Call Contact in English / Latin ("call papa", "call mom")
-            normalized.startsWith("call ") && !containsAny(normalized, "camera", "vision", "settings", "emergency", "police", "112", "100") -> {
-                val target = normalized.removePrefix("call").trim()
-                if (target.isNotBlank()) VoiceCommand.CallContact(target) else VoiceCommand.CallEmergency
-            }
-
-            // Direct Call Contact in Hindi ("कॉल पापा", "कॉल मम्मी")
-            normalized.startsWith("कॉल ") && !containsAny(normalized, "कैमरा", "विजन", "सेटिंग्स", "इमरजेंसी", "पुलिस", "112", "100") -> {
-                val target = normalized.removePrefix("कॉल").trim()
-                if (target.isNotBlank()) VoiceCommand.CallContact(target) else VoiceCommand.CallEmergency
-            }
-
-            // Contact calling with "[name] ko call karo" or "[name] ko phone lagao" (Latin)
-            containsAny(normalized, "ko call", "ko phone") -> {
-                val cleaned = normalized
-                    .replace("karo", "")
-                    .replace("lagao", "")
-                    .replace("milao", "")
-                    .replace("kijiye", "")
-                    .trim()
-                val parts = if (cleaned.contains("ko call")) {
-                    cleaned.split("ko call")
-                } else {
-                    cleaned.split("ko phone")
-                }
-                val name = parts.firstOrNull()?.trim() ?: ""
-                if (name.isNotBlank() && !containsAny(name, "emergency", "112", "100", "police")) {
-                    VoiceCommand.CallContact(name)
-                } else {
-                    VoiceCommand.CallEmergency
-                }
-            }
-
-            // Contact calling in Devanagari ("[नाम] को कॉल करो", "[नाम] को फोन लगाओ")
-            containsAny(normalized, "को कॉल", "को फोन") -> {
-                val cleaned = normalized
-                    .replace("करो", "")
-                    .replace("लगाओ", "")
-                    .replace("मिलाओ", "")
-                    .replace("कीजिये", "")
-                    .replace("कीजिए", "")
-                    .trim()
-                val parts = if (cleaned.contains("को कॉल")) {
-                    cleaned.split("को कॉल")
-                } else {
-                    cleaned.split("को फोन")
-                }
-                val name = parts.firstOrNull()?.trim() ?: ""
-                if (name.isNotBlank() && !containsAny(name, "इमरजेंसी", "112", "100", "पुलिस")) {
-                    VoiceCommand.CallContact(name)
-                } else {
-                    VoiceCommand.CallEmergency
-                }
-            }
+            parseCallIntent(normalized) != null -> parseCallIntent(normalized)!!
 
             // 8. Emergency SOS intent
             containsAny(
@@ -326,5 +265,143 @@ object VoiceCommandParser {
             if (text.contains(target)) return true
         }
         return false
+    }
+
+    fun parseCallIntent(normalized: String): VoiceCommand? {
+        // Exclude system features and actions from call parser
+        if (containsAny(
+                normalized,
+                "camera", "vision", "कैमरा", "विजन", "ocr", "reader", "padho", "padh", "read",
+                "kahan", "location", "battery", "time", "setting", "सेटिंग", "डैशबोर्ड", "dashboard",
+                "home", "वस्तु", "सामने", "surrounding", "stop speaking", "chup", "phir se"
+            )) {
+            return null
+        }
+
+        // 1. Direct Emergency Numbers
+        if (containsAny(
+                normalized,
+                "call emergency", "emergency call", "112 par call", "call 112", "call 100",
+                "100 par call", "emergency ko call", "police ko call", "ambulance ko call",
+                "इमरजेंसी कॉल", "112 पर कॉल", "100 पर कॉल", "कॉल 112", "कॉल 100",
+                "पुलिस को फोन", "इमरजेंसी को कॉल", "112 लगाओ", "100 लगाओ",
+                "112 par phone", "100 par phone", "112 ko phone", "100 ko phone",
+                "112 ko call", "100 ko call", "112 मिलाओ", "100 मिलाओ"
+            ) || normalized == "112" || normalized == "100") {
+            return VoiceCommand.CallEmergency
+        }
+
+        // 2. Standalone call phrases (user asking to place a call to saved/primary contact)
+        val standaloneCallPhrases = setOf(
+            "phone lagao", "call lagao", "phone karo", "call karo", "phone milao", "call milao",
+            "dial karo", "call", "phone", "ek call", "ek phone", "ek call lagao", "ek phone lagao",
+            "ek call karo", "ek phone karo", "call kar do", "phone kar do", "call laga do", "phone laga do",
+            "फोन लगाओ", "कॉल लगाओ", "फोन करो", "कॉल करो", "फोन मिलाओ", "कॉल मिलाओ", "कॉल", "फोन",
+            "एक कॉल", "एक फोन", "एक कॉल लगाओ", "एक फोन लगाओ", "एक कॉल करो", "एक फोन करो",
+            "कॉल कर दो", "फोन कर दो", "कॉल लगा दो", "फोन लगा दो"
+        )
+        if (normalized in standaloneCallPhrases) {
+            return VoiceCommand.CallContact("")
+        }
+
+        // 3. Must contain at least one calling keyword to proceed
+        val hasCallKeyword = containsAny(
+            normalized,
+            "phone lagao", "call lagao", "phone karo", "call karo", "phone milao", "call milao",
+            "ko phone", "ko call", "ko lagao", "ko milao", "dial karo", "dial lagao", "call ", "phone ",
+            "फोन लगाओ", "कॉल लगाओ", "फोन करो", "कॉल करो", "फोन मिलाओ", "कॉल मिलाओ",
+            "को फोन", "को कॉल", "को लगाओ", "को मिलाओ", "डायल करो", "डायल लगाओ", "कॉल ", "फोन "
+        ) || normalized.startsWith("phone ") || normalized.startsWith("फोन ") ||
+           normalized.startsWith("call ") || normalized.startsWith("कॉल ") ||
+           normalized.endsWith(" lagao") || normalized.endsWith(" लगाओ") ||
+           normalized.endsWith(" karo") || normalized.endsWith(" करो")
+
+        if (!hasCallKeyword) return null
+
+        var text = normalized
+
+        // Remove conversational prefixes: "please ", "kripya ", "zara ", "ek ", "mujhe ", etc.
+        val convPrefixes = listOf(
+            "please ", "kripya ", "कृपया ", "zara ", "जरा ", "ek ", "एक ",
+            "mujhe ", "मुझे ", "zara sa ", "thoda "
+        )
+        for (p in convPrefixes) {
+            if (text.startsWith(p)) {
+                text = text.removePrefix(p).trim()
+            }
+        }
+
+        // Pattern A: Action Prefix -> e.g. "phone lagao rahul", "phone lagao rahul ko", "call rahul", "कॉल सोनू"
+        val actionPrefixes = listOf(
+            "phone lagao ", "call lagao ", "phone karo ", "call karo ", "phone milao ", "call milao ",
+            "dial karo ", "phone laga do ", "call laga do ", "phone kar do ", "call kar do ",
+            "call ", "phone ",
+            "फोन लगाओ ", "कॉल लगाओ ", "फोन करो ", "कॉल करो ", "फोन मिलाओ ", "कॉल मिलाओ ",
+            "डायल करो ", "फोन लगा दो ", "कॉल लगा दो ", "फोन कर दो ", "कॉल कर दो ",
+            "कॉल ", "फोन "
+        )
+        for (prefix in actionPrefixes) {
+            if (text.startsWith(prefix)) {
+                var target = text.removePrefix(prefix).trim()
+                // Strip trailing noise words
+                target = target
+                    .removeSuffix(" ko").removeSuffix(" को")
+                    .removeSuffix(" lagao").removeSuffix(" लगाओ")
+                    .removeSuffix(" karo").removeSuffix(" करो")
+                    .removeSuffix(" please").removeSuffix(" प्लीज")
+                    .removeSuffix(" laga do").removeSuffix(" लगा दो")
+                    .removeSuffix(" kar do").removeSuffix(" कर दो")
+                    .removeSuffix(" milao").removeSuffix(" मिलाओ")
+                    .trim()
+                if (target.isNotBlank()) {
+                    return if (containsAny(target, "emergency", "112", "100", "police", "ambulance", "इमरजेंसी", "पुलिस")) {
+                        VoiceCommand.CallEmergency
+                    } else {
+                        VoiceCommand.CallContact(target)
+                    }
+                }
+            }
+        }
+
+        // Pattern B: Infix with "ko" / "को" -> e.g. "rahul ko phone lagao", "rahul ko call karo", "rahul ko lagao"
+        if (text.contains(" ko ") || text.contains(" को ") || text.endsWith(" ko") || text.endsWith(" को")) {
+            val delimiter = if (text.contains(" ko ") || text.endsWith(" ko")) " ko" else " को"
+            val parts = text.split(delimiter)
+            var namePart = parts.firstOrNull()?.trim() ?: ""
+            // Clean action words from namePart in case prefix was mixed
+            for (prefix in actionPrefixes) {
+                namePart = namePart.replace(prefix.trim(), "").trim()
+            }
+            if (namePart.isNotBlank()) {
+                return if (containsAny(namePart, "emergency", "112", "100", "police", "ambulance", "इमरजेंसी", "पुलिस")) {
+                    VoiceCommand.CallEmergency
+                } else {
+                    VoiceCommand.CallContact(namePart)
+                }
+            }
+        }
+
+        // Pattern C: Suffix -> e.g. "rahul phone lagao", "rahul call lagao", "सोनू फोन लगाओ"
+        val actionSuffixes = listOf(
+            " phone lagao", " call lagao", " phone karo", " call karo", " phone milao", " call milao",
+            " laga do", " kar do", " lagana",
+            " फोन लगाओ", " कॉल लगाओ", " फोन करो", " कॉल करो", " फोन मिलाओ", " कॉल मिलाओ",
+            " लगा दो", " कर दो", " लगाना"
+        )
+        for (suffix in actionSuffixes) {
+            if (text.endsWith(suffix)) {
+                var target = text.removeSuffix(suffix).trim()
+                target = target.removeSuffix(" ko").removeSuffix(" को").trim()
+                if (target.isNotBlank()) {
+                    return if (containsAny(target, "emergency", "112", "100", "police", "ambulance", "इमरजेंसी", "पुलिस")) {
+                        VoiceCommand.CallEmergency
+                    } else {
+                        VoiceCommand.CallContact(target)
+                    }
+                }
+            }
+        }
+
+        return null
     }
 }

@@ -74,7 +74,9 @@ fun OCRScreen(
     var previewViewRef by remember { androidx.compose.runtime.mutableStateOf<PreviewView?>(null) }
 
     DisposableEffect(Unit) {
+        ocrViewModel.startReading()
         onDispose {
+            ocrViewModel.stopReading()
             cameraManager.shutdown(previewViewRef)
         }
     }

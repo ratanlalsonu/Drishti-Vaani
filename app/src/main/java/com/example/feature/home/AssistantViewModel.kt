@@ -13,6 +13,7 @@ import com.example.core.battery.BatteryStatusMonitor
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.PriorityLevel
 import com.example.core.model.VoiceCommand
+import com.example.core.util.ContactMatcher
 import com.example.data.local.DrishtiDatabase
 import com.example.data.local.entity.EmergencyContact
 import com.example.feature.voice.SpeechRecognizerManager
@@ -64,6 +65,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     var onVisionQueryRequested: (() -> Unit)? = null
     var onVisionRangeChanged: ((com.example.core.model.DetectionRangeLimit) -> Unit)? = null
     var onIdentifyObjectRequested: (() -> Unit)? = null
+    var onLeaveVisionScreen: (() -> Unit)? = null
+    var onLeaveOcrScreen: (() -> Unit)? = null
+    var onOcrRepeatRequested: (() -> Unit)? = null
+
+    private val navigationBackStack = mutableListOf("home")
 
     private val _uiState = MutableStateFlow(AssistantUiState())
     val uiState: StateFlow<AssistantUiState> = _uiState.asStateFlow()
@@ -107,14 +113,16 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 speechManager.resumeAfterTTS()
             }
         }
-        loadPrimaryContact()
+        observeContacts()
         batteryMonitor.start()
     }
 
-    private fun loadPrimaryContact() {
+    private fun observeContacts() {
         viewModelScope.launch {
-            val contact = database.emergencyContactDao().getPrimaryContact()
-            _uiState.update { it.copy(primaryContact = contact) }
+            database.emergencyContactDao().getAllContacts().collect { list ->
+                val primary = list.firstOrNull { it.isPrimary } ?: list.firstOrNull()
+                _uiState.update { it.copy(primaryContact = primary) }
+            }
         }
     }
 
@@ -166,8 +174,12 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         when (command) {
             is VoiceCommand.GoHome -> {
                 hapticManager.triggerConfirmation()
-                _uiState.update { it.copy(activeScreen = "home", isVisionActive = false) }
-                speakFeedback("Dashboard par wapas aa gaye hain. Aap kya karna chahte hain?", "Returned to main dashboard. What would you like to do?")
+                cleanupScreen(_uiState.value.activeScreen)
+                ttsManager.stopSpeaking()
+                _uiState.update { it.copy(activeScreen = "home", isVisionActive = false, isEmergencyActive = false) }
+                navigationBackStack.clear()
+                navigationBackStack.add("home")
+                speakFeedback("Dashboard par wapas aa gaye hain.", "Returned to main dashboard.")
             }
 
             is VoiceCommand.CheckBattery -> {
@@ -189,26 +201,43 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             is VoiceCommand.StartVision -> {
-
                 hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "vision") {
+                    navigationBackStack.add("vision")
+                }
                 _uiState.update { it.copy(isVisionActive = true, activeScreen = "vision") }
                 speakFeedback("Vision assistance shuru ho rahi hai. Live camera active.", "Vision assistance activated.")
             }
 
             is VoiceCommand.StopVision -> {
                 hapticManager.triggerConfirmation()
+                cleanupScreen("vision")
+                ttsManager.stopSpeaking()
                 _uiState.update { it.copy(isVisionActive = false, activeScreen = "home") }
+                navigationBackStack.clear()
+                navigationBackStack.add("home")
                 speakFeedback("Vision assistance rok di gayi hai.", "Vision assistance stopped.")
             }
 
             is VoiceCommand.ReadText -> {
                 hapticManager.triggerConfirmation()
-                _uiState.update { it.copy(activeScreen = "ocr") }
-                speakFeedback("Text reading screen active. Camera ko text ke samne rakhein.", "Text reading active. Point camera at text.")
+                if (_uiState.value.activeScreen == "ocr") {
+                    // Re-read current text on demand
+                    onOcrRepeatRequested?.invoke()
+                } else {
+                    if (navigationBackStack.lastOrNull() != "ocr") {
+                        navigationBackStack.add("ocr")
+                    }
+                    _uiState.update { it.copy(activeScreen = "ocr") }
+                    speakFeedback("Text reading screen active. Camera ko text ke samne rakhein.", "Text reading active. Point camera at text.")
+                }
             }
 
             is VoiceCommand.WhereAmI -> {
                 hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "navigation") {
+                    navigationBackStack.add("navigation")
+                }
                 _uiState.update { it.copy(activeScreen = "navigation") }
                 speakFeedback("Aapki location check ki ja rahi hai.", "Checking your current location.")
             }
@@ -234,18 +263,30 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             is VoiceCommand.CallContact -> {
                 val queryName = command.targetName.trim()
                 viewModelScope.launch {
-                    val matchedContact = database.emergencyContactDao().findContactByName(queryName)
+                    val allContacts = database.emergencyContactDao().getAllContactsList()
+                    val matchedContact = ContactMatcher.findBestMatch(allContacts, queryName)
+
                     if (matchedContact != null) {
                         initiatePhoneCall(matchedContact.phoneNumber, matchedContact.name)
                     } else if (queryName.matches(Regex("^[0-9+]{3,14}$"))) {
                         // Directly dialed phone number e.g. "Call 112" or "Call 9876543210"
                         initiatePhoneCall(queryName, queryName)
-                    } else {
-                        val all = database.emergencyContactDao().getAllContactsList()
-                        val primary = all.firstOrNull { it.isPrimary } ?: all.firstOrNull()
+                    } else if (queryName.isBlank()) {
+                        // User just said "phone lagao" / "call lagao" without specifying a name
+                        val primary = allContacts.firstOrNull { it.isPrimary } ?: allContacts.firstOrNull()
                         if (primary != null) {
-                            val msgHi = "'$queryName' naam ka contact nahi mila. Kya aap ${primary.name} ko call karna chahte hain? 'Call ${primary.name}' boliye."
-                            val msgEn = "Contact '$queryName' not found. Say 'Call ${primary.name}' to call primary contact."
+                            initiatePhoneCall(primary.phoneNumber, primary.name)
+                        } else {
+                            val msgHi = "Koi emergency contact save nahi hai. Emergency ke liye 'Call 112' bolein ya emergency section me contact save karein."
+                            val msgEn = "No emergency contact saved. Say 'Call 112' for emergency services."
+                            speakFeedback(msgHi, msgEn)
+                        }
+                    } else {
+                        if (allContacts.isNotEmpty()) {
+                            val primary = allContacts.firstOrNull { it.isPrimary } ?: allContacts.firstOrNull()
+                            val savedNames = allContacts.joinToString(", ") { it.name }
+                            val msgHi = "'$queryName' naam ka contact nahi mila. Aapke paas $savedNames save hain. Call karne ke liye 'Call ${primary?.name ?: ""}' bolein."
+                            val msgEn = "Contact '$queryName' not found. Saved contacts: $savedNames. Say 'Call ${primary?.name ?: ""}' to call."
                             speakFeedback(msgHi, msgEn)
                         } else {
                             val msgHi = "'$queryName' naam ka contact save nahi hai. Emergency ke liye 'Call 112' bolein."
@@ -259,7 +300,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             is VoiceCommand.CallEmergency -> {
                 hapticManager.triggerCriticalHazard()
                 viewModelScope.launch {
-                    val primary = database.emergencyContactDao().getPrimaryContact()
+                    val allContacts = database.emergencyContactDao().getAllContactsList()
+                    val primary = allContacts.firstOrNull { it.isPrimary } ?: allContacts.firstOrNull()
                     if (primary != null) {
                         initiatePhoneCall(primary.phoneNumber, primary.name)
                     } else {
@@ -270,7 +312,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             is VoiceCommand.RepeatSpeech -> {
                 hapticManager.triggerConfirmation()
-                ttsManager.repeatLast()
+                if (_uiState.value.activeScreen == "ocr") {
+                    onOcrRepeatRequested?.invoke()
+                } else if (_uiState.value.activeScreen == "vision") {
+                    onVisionQueryRequested?.invoke()
+                } else {
+                    ttsManager.repeatLast()
+                }
             }
 
             is VoiceCommand.StopSpeech -> {
@@ -279,6 +327,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             is VoiceCommand.OpenSettings -> {
                 hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "settings") {
+                    navigationBackStack.add("settings")
+                }
                 _uiState.update { it.copy(activeScreen = "settings") }
                 speakFeedback("Settings khul gayi hai.", "Opening settings.")
             }
@@ -293,29 +344,42 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             is VoiceCommand.Help -> {
                 hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "help") {
+                    navigationBackStack.add("help")
+                }
                 val helpMsg = "Aap bol sakte hain: 'Start Vision', 'Read Text', 'Where am I', 'Find nearest hospital', 'Emergency', 'Repeat', ya 'Settings'."
                 speakFeedback(helpMsg, helpMsg)
             }
 
             is VoiceCommand.QuerySurroundings -> {
                 hapticManager.triggerConfirmation()
+                if (_uiState.value.activeScreen != "vision") {
+                    if (navigationBackStack.lastOrNull() != "vision") {
+                        navigationBackStack.add("vision")
+                    }
+                    _uiState.update { it.copy(isVisionActive = true, activeScreen = "vision") }
+                }
                 onVisionQueryRequested?.invoke()
-                speakFeedback("Surroundings scan kiye ja rahe hain. Camera samne rakhein.", "Scanning surroundings. Keep camera steady.")
             }
 
             is VoiceCommand.IdentifyObject -> {
                 hapticManager.triggerConfirmation()
                 if (_uiState.value.activeScreen != "vision") {
+                    if (navigationBackStack.lastOrNull() != "vision") {
+                        navigationBackStack.add("vision")
+                    }
                     _uiState.update { it.copy(isVisionActive = true, activeScreen = "vision") }
                 }
                 onIdentifyObjectRequested?.invoke()
             }
 
             is VoiceCommand.PauseReading -> {
+                onLeaveOcrScreen?.invoke()
                 speakFeedback("Reading paused.", "Reading paused.")
             }
 
             is VoiceCommand.ResumeReading -> {
+                onOcrRepeatRequested?.invoke()
                 speakFeedback("Reading resumed.", "Reading resumed.")
             }
 
@@ -376,7 +440,24 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         ttsManager.speak(feedback, PriorityLevel.HIGH)
     }
 
-    fun navigateToScreen(screenName: String) {
+    fun cleanupScreen(screenName: String) {
+        ttsManager.stopSpeaking()
+        when (screenName) {
+            "vision" -> onLeaveVisionScreen?.invoke()
+            "ocr" -> onLeaveOcrScreen?.invoke()
+        }
+    }
+
+    fun navigateToScreen(screenName: String, addToBackStack: Boolean = true) {
+        val current = _uiState.value.activeScreen
+        if (screenName == current) return
+
+        cleanupScreen(current)
+
+        if (addToBackStack && (navigationBackStack.isEmpty() || navigationBackStack.last() != screenName)) {
+            navigationBackStack.add(screenName)
+        }
+
         _uiState.update { it.copy(activeScreen = screenName) }
         hapticManager.triggerConfirmation()
         when (screenName) {
@@ -385,11 +466,69 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             "navigation" -> executeCommand(VoiceCommand.WhereAmI)
             "emergency" -> executeCommand(VoiceCommand.Emergency)
             "settings" -> executeCommand(VoiceCommand.OpenSettings)
+            "help" -> executeCommand(VoiceCommand.Help)
             "home" -> {
                 _uiState.update { it.copy(isVisionActive = false, isEmergencyActive = false) }
-                speakFeedback("Home screen.", "Home screen.")
+                speakFeedback("Dashboard par wapas aa gaye hain.", "Returned to main dashboard.")
             }
         }
+    }
+
+    /**
+     * Handles back button press from Android system / gesture bar:
+     * Navigates to the previous screen in the stack rather than closing the entire application.
+     * Returns true if back navigation was handled, or false if already at root "home".
+     */
+    fun navigateBack(): Boolean {
+        val currentScreen = _uiState.value.activeScreen
+        cleanupScreen(currentScreen)
+
+        if (navigationBackStack.size > 1) {
+            navigationBackStack.removeAt(navigationBackStack.size - 1)
+            val previousScreen = navigationBackStack.lastOrNull() ?: "home"
+            _uiState.update {
+                it.copy(
+                    activeScreen = previousScreen,
+                    isVisionActive = (previousScreen == "vision"),
+                    isEmergencyActive = (previousScreen == "emergency")
+                )
+            }
+            hapticManager.triggerConfirmation()
+            val feedbackHi = when (previousScreen) {
+                "home" -> "Home screen par wapas aa gaye."
+                "vision" -> "Vision screen par wapas aa gaye."
+                "ocr" -> "Text reading screen par wapas aa gaye."
+                "navigation" -> "Navigation screen par wapas aa gaye."
+                "emergency" -> "Emergency screen par wapas aa gaye."
+                "settings" -> "Settings screen par wapas aa gaye."
+                else -> "Pichle screen par wapas aa gaye."
+            }
+            val feedbackEn = when (previousScreen) {
+                "home" -> "Returned to home screen."
+                "vision" -> "Returned to vision screen."
+                "ocr" -> "Returned to text reading screen."
+                "navigation" -> "Returned to navigation screen."
+                "emergency" -> "Returned to emergency screen."
+                "settings" -> "Returned to settings screen."
+                else -> "Returned to previous screen."
+            }
+            speakFeedback(feedbackHi, feedbackEn)
+            return true
+        } else if (currentScreen != "home") {
+            _uiState.update {
+                it.copy(
+                    activeScreen = "home",
+                    isVisionActive = false,
+                    isEmergencyActive = false
+                )
+            }
+            navigationBackStack.clear()
+            navigationBackStack.add("home")
+            hapticManager.triggerConfirmation()
+            speakFeedback("Home screen par wapas aa gaye.", "Returned to home screen.")
+            return true
+        }
+        return false
     }
 
     fun checkBatteryStatus() {

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.core.accessibility.HapticFeedbackManager
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.PriorityLevel
+import com.example.core.util.ContactMatcher
 import com.example.data.local.DrishtiDatabase
 import com.example.data.local.entity.EmergencyContact
 import com.example.feature.voice.TTSManager
@@ -57,13 +58,24 @@ class EmergencyViewModel(application: Application) : AndroidViewModel(applicatio
     fun saveContact(name: String, phone: String, isPrimary: Boolean = false) {
         if (name.isBlank() || phone.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
+            val existing = database.emergencyContactDao().getAllContactsList()
+            val shouldBePrimary = isPrimary || existing.isEmpty()
+            if (shouldBePrimary) {
+                database.emergencyContactDao().clearPrimaryFlags()
+            }
             database.emergencyContactDao().insertContact(
                 EmergencyContact(
-                    name = name,
-                    phoneNumber = phone,
-                    isPrimary = isPrimary
+                    name = name.trim(),
+                    phoneNumber = phone.trim(),
+                    isPrimary = shouldBePrimary
                 )
             )
+            val feedback = if (currentLanguage == AssistantLanguage.HINDI) {
+                "${name.trim()} emergency contact me jud gaya hai."
+            } else {
+                "${name.trim()} added as emergency contact."
+            }
+            ttsManager?.speak(feedback, PriorityLevel.HIGH)
         }
     }
 
@@ -117,16 +129,24 @@ class EmergencyViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun callContactByName(name: String) {
         viewModelScope.launch {
-            val contact = database.emergencyContactDao().findContactByName(name)
+            val all = database.emergencyContactDao().getAllContactsList()
+            val contact = ContactMatcher.findBestMatch(all, name)
             if (contact != null) {
                 makeEmergencyCall(contact)
             } else {
-                val primary = database.emergencyContactDao().getPrimaryContact()
+                val primary = all.firstOrNull { it.isPrimary } ?: all.firstOrNull()
                 if (primary != null) {
                     val msg = if (currentLanguage == AssistantLanguage.HINDI) {
                         "'$name' nahi mila. Primary contact ${primary.name} ko call lagane ke liye 'Call ${primary.name}' boliye."
                     } else {
                         "Contact '$name' not found. Say 'Call ${primary.name}' to call primary contact."
+                    }
+                    ttsManager?.speak(msg, PriorityLevel.HIGH)
+                } else {
+                    val msg = if (currentLanguage == AssistantLanguage.HINDI) {
+                        "Koi emergency contact save nahi hai. 112 par call karne ke liye 'Call 112' boliye."
+                    } else {
+                        "No emergency contact found. Say 'Call 112' to call emergency services."
                     }
                     ttsManager?.speak(msg, PriorityLevel.HIGH)
                 }

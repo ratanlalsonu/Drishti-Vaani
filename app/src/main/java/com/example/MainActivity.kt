@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -136,7 +137,7 @@ fun AppRoot(
         emergencyViewModel.attachTTS(assistantViewModel.ttsManager, uiState.currentLanguage)
     }
 
-    // Connect global voice commands for Vision controls
+    // Connect global voice commands for Vision controls and session cleanup
     LaunchedEffect(Unit) {
         assistantViewModel.onVisionQueryRequested = {
             visionViewModel.summarizeCurrentView()
@@ -147,6 +148,15 @@ fun AppRoot(
         assistantViewModel.onIdentifyObjectRequested = {
             visionViewModel.identifyCurrentObject()
         }
+        assistantViewModel.onLeaveVisionScreen = {
+            visionViewModel.stopVisionSession()
+        }
+        assistantViewModel.onLeaveOcrScreen = {
+            ocrViewModel.stopReading()
+        }
+        assistantViewModel.onOcrRepeatRequested = {
+            ocrViewModel.repeatReading()
+        }
 
         // Start auto-listening immediately if audio permission is already granted
         val hasMic = ContextCompat.checkSelfPermission(
@@ -156,6 +166,15 @@ fun AppRoot(
         if (hasMic) {
             assistantViewModel.startAutoListening()
         }
+    }
+
+    // Hardware / System Gesture Back Button Handler
+    // Prevents app from closing and navigates back to previous screen
+    BackHandler(enabled = uiState.activeScreen != "home") {
+        visionViewModel.stopVisionSession()
+        ocrViewModel.stopReading()
+        assistantViewModel.ttsManager.stopSpeaking()
+        assistantViewModel.navigateBack()
     }
 
     // Request permissions upfront in Compose
@@ -220,7 +239,7 @@ fun AppRoot(
                 "vision" -> {
                     VisionScreen(
                         uiState = visionState,
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onQuerySurroundings = { visionViewModel.summarizeCurrentView() },
                         onIdentifyObject = { bmp -> visionViewModel.identifyCurrentObject(bmp) },
                         onFrameAvailable = { bmp -> visionViewModel.updateLatestFrameBitmap(bmp) },
@@ -242,15 +261,15 @@ fun AppRoot(
                         onDetectionsReceived = { objects, width, height ->
                             visionViewModel.onDetectionsReceived(objects, width, height)
                         },
-                        onStartDirectionTracking = { visionViewModel.startDirectionTracking() },
-                        onStopDirectionTracking = { visionViewModel.stopDirectionTracking() }
+                        onStartDirectionTracking = { visionViewModel.startVisionSession() },
+                        onStopDirectionTracking = { visionViewModel.stopVisionSession() }
                     )
                 }
                 "ocr" -> {
                     OCRScreen(
                         uiState = ocrState,
                         ocrViewModel = ocrViewModel,
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onMicClick = {
                             if (uiState.isListening) {
                                 assistantViewModel.stopVoiceInput()
@@ -264,7 +283,7 @@ fun AppRoot(
                     NavigationScreen(
                         uiState = navState,
                         navigationViewModel = navigationViewModel,
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onMicClick = {
                             if (uiState.isListening) {
                                 assistantViewModel.stopVoiceInput()
@@ -278,7 +297,7 @@ fun AppRoot(
                     EmergencyScreen(
                         uiState = emergencyState,
                         emergencyViewModel = emergencyViewModel,
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onMicClick = {
                             if (uiState.isListening) {
                                 assistantViewModel.stopVoiceInput()
@@ -292,13 +311,13 @@ fun AppRoot(
                     SettingsScreen(
                         currentLanguage = uiState.currentLanguage,
                         onLanguageSelected = { lang -> assistantViewModel.setLanguage(lang) },
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onSpeechRateChanged = { rate -> assistantViewModel.ttsManager.setSpeechRate(rate) }
                     )
                 }
                 "help" -> {
                     VoiceHelpScreen(
-                        onBackClick = { assistantViewModel.navigateToScreen("home") },
+                        onBackClick = { assistantViewModel.navigateBack() },
                         onSpeakHelp = { assistantViewModel.executeCommand(VoiceCommand.Help) }
                     )
                 }

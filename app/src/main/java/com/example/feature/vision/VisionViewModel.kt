@@ -50,9 +50,35 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
     private var currentLanguage = AssistantLanguage.HINDI
     @Volatile
     private var latestBitmap: android.graphics.Bitmap? = null
+    @Volatile
+    var isVisionSessionActive: Boolean = false
+        private set
 
-    init {
+    fun startVisionSession() {
+        isVisionSessionActive = true
+        _uiState.update {
+            it.copy(
+                isAnalyzing = true,
+                hasAnnouncedCurrentDirection = false,
+                isDirectionSettled = true
+            )
+        }
+        throttler.clear()
         startDirectionTracking()
+    }
+
+    fun stopVisionSession() {
+        isVisionSessionActive = false
+        stopDirectionTracking()
+        ttsManager?.stopSpeaking()
+        _uiState.update {
+            it.copy(
+                isAnalyzing = false,
+                detections = emptyList(),
+                hasAnnouncedCurrentDirection = false
+            )
+        }
+        throttler.clear()
     }
 
     fun startDirectionTracking() {
@@ -60,6 +86,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             directionTracker = DirectionOrientationTracker(
                 context = getApplication(),
                 onDirectionMoved = {
+                    if (!isVisionSessionActive) return@DirectionOrientationTracker
                     // Blind person moved vision / changed direction
                     _uiState.update {
                         it.copy(
@@ -70,7 +97,8 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                     throttler.clear()
                 },
                 onDirectionSettled = { _, _, hiName, enName ->
-                    // Vision settled in new direction: announce once!
+                    if (!isVisionSessionActive) return@DirectionOrientationTracker
+                    // Vision settled in new direction
                     _uiState.update {
                         it.copy(
                             isDirectionSettled = true,
@@ -78,7 +106,9 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                             currentDirectionEn = enName
                         )
                     }
-                    announceDirectionSurroundingsOnce(force = false)
+                    if (_uiState.value.detections.isNotEmpty()) {
+                        announceDirectionSurroundingsOnce(force = false)
+                    }
                 }
             )
         }
@@ -91,7 +121,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         super.onCleared()
-        stopDirectionTracking()
+        stopVisionSession()
     }
 
     fun updateLatestFrameBitmap(bitmap: android.graphics.Bitmap?) {
@@ -162,6 +192,8 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onDetectionsReceived(objects: List<DetectedObject>, width: Int, height: Int) {
+        if (!isVisionSessionActive) return
+
         val currentMax = _uiState.value.rangeLimit.maxMeters
 
         // Filter out any objects that exceed user range threshold (e.g. > 10m)
@@ -185,20 +217,8 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // 2. If already announced for this direction, DO NOT repeat automatically.
-        // Silence is maintained so the user is not disturbed repeatedly in the same direction.
-        // The ONLY safety exception: Sudden critical collision hazard very close (< 0.85m)
-        val criticalCloseHazard = validRangeObjects.firstOrNull {
-            it.priority == PriorityLevel.CRITICAL && it.estimatedDistanceMeters < 0.85f
-        }
-        if (criticalCloseHazard != null && throttler.shouldAnnounce(criticalCloseHazard)) {
-            hapticManager.triggerCriticalHazard()
-            val alert = if (currentLanguage == AssistantLanguage.HINDI) {
-                "सावधान! बहुत पास खतरा: ${criticalCloseHazard.hindiLabel}!"
-            } else {
-                "Warning! Hazard very close: ${criticalCloseHazard.label}!"
-            }
-            ttsManager?.speak(alert, PriorityLevel.CRITICAL)
-        }
+        // Maintain silence as long as user keeps facing this direction!
+        // To re-announce in the same direction, user explicitly asks by voice or taps button.
     }
 
     /**
@@ -207,6 +227,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
      * If force = true (user asks by voice or taps button), it re-announces on-demand.
      */
     fun announceDirectionSurroundingsOnce(force: Boolean = false) {
+        if (!isVisionSessionActive && !force) return
         if (!force && _uiState.value.hasAnnouncedCurrentDirection) {
             // Already announced for this direction; do not repeat automatically!
             return

@@ -39,10 +39,10 @@ class DirectionOrientationTracker(
     private val trackerScope = CoroutineScope(Dispatchers.Main + Job())
     private var settleJob: Job? = null
 
-    // Angle thresholds
-    private val azimuthShiftThresholdDegrees = 22.0f
-    private val pitchShiftThresholdDegrees = 18.0f
-    private val settleDelayMs = 650L
+    // Angle thresholds - set high enough to ignore natural hand tremors while detecting deliberate direction turns
+    private val azimuthShiftThresholdDegrees = 30.0f
+    private val pitchShiftThresholdDegrees = 24.0f
+    private val settleDelayMs = 750L
 
     @Volatile
     var currentAzimuth: Float = 0f
@@ -82,6 +82,9 @@ class DirectionOrientationTracker(
         isListening = false
         settleJob?.cancel()
         settleJob = null
+        isCurrentlyMoving = false
+        lastSettledAzimuth = -999f
+        lastSettledPitch = -999f
         try {
             sensorManager?.unregisterListener(this)
         } catch (_: Exception) {}

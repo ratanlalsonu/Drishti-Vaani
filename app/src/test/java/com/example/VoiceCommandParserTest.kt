@@ -158,4 +158,66 @@ class VoiceCommandParserTest {
         assertTrue(cmdHindi is VoiceCommand.FindNearby)
         assertEquals("hospital", (cmdHindi as VoiceCommand.FindNearby).placeType)
     }
+
+    @Test
+    fun testContactCallCommands() {
+        // Various ways blind users say "phone lagao" / "call lagao"
+        val cmd1 = VoiceCommandParser.parse("sonu ko phone lagao")
+        assertTrue(cmd1 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd1 as VoiceCommand.CallContact).targetName)
+
+        val cmd2 = VoiceCommandParser.parse("phone lagao sonu")
+        assertTrue(cmd2 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd2 as VoiceCommand.CallContact).targetName)
+
+        val cmd3 = VoiceCommandParser.parse("phone lagao sonu ko")
+        assertTrue(cmd3 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd3 as VoiceCommand.CallContact).targetName)
+
+        val cmd4 = VoiceCommandParser.parse("sonu phone lagao")
+        assertTrue(cmd4 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd4 as VoiceCommand.CallContact).targetName)
+
+        val cmd5 = VoiceCommandParser.parse("sonu ko call lagao")
+        assertTrue(cmd5 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd5 as VoiceCommand.CallContact).targetName)
+
+        val cmd6 = VoiceCommandParser.parse("sonu ko lagao")
+        assertTrue(cmd6 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd6 as VoiceCommand.CallContact).targetName)
+
+        val cmd7 = VoiceCommandParser.parse("call sonu")
+        assertTrue(cmd7 is VoiceCommand.CallContact)
+        assertEquals("sonu", (cmd7 as VoiceCommand.CallContact).targetName)
+
+        // Devanagari Hindi commands
+        val cmdHi1 = VoiceCommandParser.parse("सोनू को फोन लगाओ")
+        assertTrue(cmdHi1 is VoiceCommand.CallContact)
+        assertEquals("सोनू", (cmdHi1 as VoiceCommand.CallContact).targetName)
+
+        val cmdHi2 = VoiceCommandParser.parse("फोन लगाओ सोनू")
+        assertTrue(cmdHi2 is VoiceCommand.CallContact)
+        assertEquals("सोनू", (cmdHi2 as VoiceCommand.CallContact).targetName)
+
+        val cmdHi3 = VoiceCommandParser.parse("फोन लगाओ सोनू को")
+        assertTrue(cmdHi3 is VoiceCommand.CallContact)
+        assertEquals("सोनू", (cmdHi3 as VoiceCommand.CallContact).targetName)
+
+        val cmdHi4 = VoiceCommandParser.parse("सोनू फोन लगाओ")
+        assertTrue(cmdHi4 is VoiceCommand.CallContact)
+        assertEquals("सोनू", (cmdHi4 as VoiceCommand.CallContact).targetName)
+
+        val cmdHi5 = VoiceCommandParser.parse("सोनू को लगाओ")
+        assertTrue(cmdHi5 is VoiceCommand.CallContact)
+        assertEquals("सोनू", (cmdHi5 as VoiceCommand.CallContact).targetName)
+
+        // Generic "phone lagao" without contact name triggers primary/default contact call
+        val cmdGeneric = VoiceCommandParser.parse("phone lagao")
+        assertTrue(cmdGeneric is VoiceCommand.CallContact)
+        assertEquals("", (cmdGeneric as VoiceCommand.CallContact).targetName)
+
+        val cmdGenericHi = VoiceCommandParser.parse("फोन लगाओ")
+        assertTrue(cmdGenericHi is VoiceCommand.CallContact)
+        assertEquals("", (cmdGenericHi as VoiceCommand.CallContact).targetName)
+    }
 }

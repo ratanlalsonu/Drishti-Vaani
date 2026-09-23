@@ -25,6 +25,9 @@ interface EmergencyContactDao {
     @Query("SELECT * FROM emergency_contacts WHERE LOWER(name) LIKE '%' || LOWER(:searchName) || '%' OR LOWER(relationship) LIKE '%' || LOWER(:searchName) || '%' LIMIT 1")
     suspend fun findContactByName(searchName: String): EmergencyContact?
 
+    @Query("UPDATE emergency_contacts SET isPrimary = 0")
+    suspend fun clearPrimaryFlags()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContact(contact: EmergencyContact): Long
 

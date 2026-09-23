@@ -299,7 +299,7 @@ fun EmergencyScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                emergencyViewModel.makeEmergencyCall()
+                                emergencyViewModel.makeEmergencyCall(contact)
                             },
                         colors = CardDefaults.cardColors(containerColor = AccessibleDarkSurface)
                     ) {
