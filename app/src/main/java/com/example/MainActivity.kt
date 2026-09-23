@@ -317,6 +317,9 @@ fun AppRoot(
                         },
                         onRepeatClick = {
                             assistantViewModel.executeCommand(VoiceCommand.RepeatSpeech)
+                        },
+                        onBatteryClick = {
+                            assistantViewModel.checkBatteryStatus()
                         }
                     )
                 }

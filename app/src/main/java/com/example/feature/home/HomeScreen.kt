@@ -21,6 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Emergency
 import androidx.compose.material.icons.filled.GraphicEq
@@ -63,6 +66,7 @@ fun HomeScreen(
     onMicClick: () -> Unit,
     onNavigate: (String) -> Unit,
     onRepeatClick: () -> Unit,
+    onBatteryClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -104,25 +108,84 @@ fun HomeScreen(
                         )
                     }
 
-                    // Quick Audio Repeat Button (Accessible 48dp+ target)
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(AccessibleDarkSurface)
-                            .clickable(onClick = onRepeatClick)
-                            .testTag("repeat_speech_button")
-                            .semantics {
-                                contentDescription = "Repeat last spoken feedback"
-                            },
-                        contentAlignment = Alignment.Center
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = null,
-                            tint = HighContrastYellow,
-                            modifier = Modifier.size(32.dp)
-                        )
+                        // Battery Status Monitor Chip (Accessible 48dp+ touch target)
+                        val battery = uiState.batteryInfo
+                        val batteryBorderColor = when {
+                            battery.isCriticallyLow -> HighContrastRed
+                            battery.isLow -> HighContrastYellow
+                            battery.isCharging -> HighContrastGreen
+                            else -> HighContrastCyan
+                        }
+                        val batteryIcon = when {
+                            battery.isCharging -> Icons.Default.BatteryChargingFull
+                            battery.isCriticallyLow || battery.isLow -> Icons.Default.BatteryAlert
+                            else -> Icons.Default.BatteryFull
+                        }
+
+                        Surface(
+                            onClick = onBatteryClick,
+                            shape = RoundedCornerShape(20.dp),
+                            color = AccessibleDarkSurface,
+                            border = BorderStroke(1.5.dp, batteryBorderColor),
+                            modifier = Modifier
+                                .height(56.dp)
+                                .testTag("battery_status_indicator")
+                                .semantics {
+                                    contentDescription = "Battery level: ${battery.levelPercent} percent. ${if (battery.isCharging) "Charging." else if (battery.isCriticallyLow) "Critically low battery warning!" else ""}"
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = batteryIcon,
+                                    contentDescription = null,
+                                    tint = batteryBorderColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = "${battery.levelPercent}%",
+                                        color = if (battery.isCriticallyLow) HighContrastRed else Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (battery.isCharging) "चार्जिंग" else if (battery.isCriticallyLow) "बहुत कम" else "बैटरी",
+                                        color = batteryBorderColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+
+                        // Quick Audio Repeat Button (Accessible 48dp+ target)
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(AccessibleDarkSurface)
+                                .clickable(onClick = onRepeatClick)
+                                .testTag("repeat_speech_button")
+                                .semantics {
+                                    contentDescription = "Repeat last spoken feedback"
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = null,
+                                tint = HighContrastYellow,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
                 }
 

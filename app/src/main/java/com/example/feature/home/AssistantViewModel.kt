@@ -8,6 +8,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.accessibility.HapticFeedbackManager
+import com.example.core.battery.BatteryInfo
+import com.example.core.battery.BatteryStatusMonitor
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.PriorityLevel
 import com.example.core.model.VoiceCommand
@@ -33,12 +35,31 @@ data class AssistantUiState(
     val isVisionActive: Boolean = false,
     val isEmergencyActive: Boolean = false,
     val primaryContact: EmergencyContact? = null,
-    val activeScreen: String = "home"
+    val activeScreen: String = "home",
+    val batteryInfo: BatteryInfo = BatteryInfo()
 )
 
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
     private val database = DrishtiDatabase.getDatabase(application)
     val hapticManager = HapticFeedbackManager(application)
+
+    val batteryMonitor = BatteryStatusMonitor(
+        context = application,
+        onCriticalBatteryWarning = { info, messageHi, messageEn ->
+            val speech = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) messageHi else messageEn
+            hapticManager.triggerCriticalHazard()
+            _uiState.update {
+                it.copy(
+                    batteryInfo = info,
+                    assistantFeedback = speech
+                )
+            }
+            ttsManager.speak(speech, PriorityLevel.CRITICAL)
+        },
+        onBatteryStateChanged = { info ->
+            _uiState.update { it.copy(batteryInfo = info) }
+        }
+    )
 
     var onVisionQueryRequested: (() -> Unit)? = null
     var onVisionRangeChanged: ((com.example.core.model.DetectionRangeLimit) -> Unit)? = null
@@ -87,6 +108,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         loadPrimaryContact()
+        batteryMonitor.start()
     }
 
     private fun loadPrimaryContact() {
@@ -150,16 +172,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
             is VoiceCommand.CheckBattery -> {
                 hapticManager.triggerConfirmation()
-                val app = getApplication<Application>()
-                val batteryManager = app.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
-                val batteryLevel = batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-                val batteryMsg = if (batteryLevel >= 0) {
-                    "Phone ki battery $batteryLevel percent hai."
-                } else {
-                    "Battery level prapt nahi ho saka."
-                }
-                val batteryMsgEn = if (batteryLevel >= 0) "Phone battery is at $batteryLevel percent." else "Could not read battery level."
-                speakFeedback(batteryMsg, batteryMsgEn)
+                val lang = _uiState.value.currentLanguage
+                val batteryMsg = batteryMonitor.getBatteryStatusDescription(lang)
+                _uiState.update { it.copy(assistantFeedback = batteryMsg) }
+                ttsManager.speak(batteryMsg, PriorityLevel.HIGH)
             }
 
 
@@ -376,8 +392,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun checkBatteryStatus() {
+        executeCommand(VoiceCommand.CheckBattery)
+    }
+
     override fun onCleared() {
         super.onCleared()
+        batteryMonitor.stop()
         speechManager.destroy()
         ttsManager.destroy()
     }
