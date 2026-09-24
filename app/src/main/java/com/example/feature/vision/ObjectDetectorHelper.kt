@@ -14,13 +14,13 @@ import com.example.core.model.SpatialPosition
 import com.example.core.model.YoloObjectTaxonomy
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import com.google.mlkit.vision.objects.ObjectDetection
 import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
+import java.util.Locale
 
 class ObjectDetectorHelper(
     private val onDetectionsReady: (List<DetectedObject>, Int, Int) -> Unit,
@@ -48,9 +48,9 @@ class ObjectDetectorHelper(
 
     private val faceDetector = FaceDetection.getClient(faceDetectorOptions)
 
-    // ML Kit Image Labeler (detects 400+ everyday categories including living animals, birds, pets, plants, trees)
+    // ML Kit Image Labeler (detects 400+ everyday categories)
     private val imageLabelerOptions = ImageLabelerOptions.Builder()
-        .setConfidenceThreshold(0.35f)
+        .setConfidenceThreshold(0.40f)
         .build()
 
     private val imageLabeler = ImageLabeling.getClient(imageLabelerOptions)
@@ -64,10 +64,18 @@ class ObjectDetectorHelper(
     private var lastAnalyzedTimestamp = 0L
     private val frameIntervalMs = 250L // ~4 FPS for smooth real-time response
 
-    // Periodic scene classification cache (refreshed rapidly to track living animals/plants)
+    // Periodic scene classification cache
     private var lastSceneLabelTimestamp = 0L
     @Volatile
     private var cachedSceneLabels: List<Pair<String, Float>> = emptyList()
+
+    private val ignoredBackgroundLabels = setOf(
+        "photography", "snapshot", "rectangle", "circle", "line", "font", "pattern",
+        "parallel", "material property", "symmetry", "design", "monochrome", "sky",
+        "flooring", "wood", "floor", "ceiling", "architecture", "interior design",
+        "room", "indoor", "outdoor", "lighting", "fixture", "flash photography",
+        "black-and-white", "selfie"
+    )
 
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
@@ -96,14 +104,14 @@ class ObjectDetectorHelper(
         val imageWidth = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.height else imageProxy.width
         val imageHeight = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.width else imageProxy.height
 
-        // Refresh scene-level classes (including animals, birds, flora) periodically
+        // Refresh scene-level labels periodically
         if (currentTimestamp - lastSceneLabelTimestamp > 500L && !isClosed) {
             lastSceneLabelTimestamp = currentTimestamp
             imageLabeler.process(inputImage)
                 .addOnSuccessListener { labels ->
                     if (!isClosed) {
                         cachedSceneLabels = labels
-                            .filter { it.confidence >= 0.35f }
+                            .filter { it.confidence >= 0.40f && !ignoredBackgroundLabels.contains(it.text.trim().lowercase(Locale.ROOT)) }
                             .map { Pair(it.text, it.confidence) }
                     }
                 }
@@ -143,7 +151,6 @@ class ObjectDetectorHelper(
 
                     // A human head/face has average height ~0.24 meters
                     val faceHeightRatio = (faceBox.height().toFloat() / imageHeight.toFloat()).coerceIn(0.015f, 1.0f)
-                    val faceWidthRatio = (faceBox.width().toFloat() / imageWidth.toFloat()).coerceIn(0.015f, 1.0f)
 
                     val meta = YoloObjectTaxonomy.resolveLabel("person")
                     val estimatedDistanceMeters = ((0.24f * 1.15f) / faceHeightRatio).coerceIn(0.4f, 30.0f)
@@ -170,7 +177,7 @@ class ObjectDetectorHelper(
                             DetectedObject(
                                 label = meta.englishName,
                                 hindiLabel = meta.hindiName,
-                                confidence = 0.90f,
+                                confidence = 0.92f,
                                 boundingBox = rectF,
                                 position = position,
                                 proximity = proximity,
@@ -185,8 +192,8 @@ class ObjectDetectorHelper(
                     }
                 }
 
-                // 2. Process Detected General Objects & Obstacles
-                for ((index, obj) in detectedObjects.withIndex()) {
+                // 2. Process Detected Real Objects with Bounding Boxes (Zero synthetic data!)
+                for (obj in detectedObjects) {
                     val box = obj.boundingBox
                     val rectF = RectF(
                         box.left.toFloat().coerceAtLeast(0f),
@@ -202,8 +209,8 @@ class ObjectDetectorHelper(
                         else -> SpatialPosition.CENTER
                     }
 
-                    // Avoid duplicate if a person was already identified at this horizontal location
-                    val isAlreadyPerson = matchedFaceCenters.any { kotlin.math.abs(it - centerX) < 0.20f }
+                    // Avoid duplicate if a verified human face was already mapped here
+                    val isAlreadyPerson = matchedFaceCenters.any { kotlin.math.abs(it - centerX) < 0.22f }
                     if (isAlreadyPerson && results.any { it.category == ObjectCategory.PERSON && it.position == position }) {
                         continue
                     }
@@ -211,33 +218,78 @@ class ObjectDetectorHelper(
                     val heightRatio = rectF.height() / imageHeight.toFloat()
                     val widthRatio = rectF.width() / imageWidth.toFloat()
 
-                    val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text
+                    val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text?.trim()
 
-                    // Check if dominant living labels (animals, pets, plants) apply:
-                    val livingSceneLabel = dominantLabels.firstOrNull { pair ->
-                        val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                        m.category == ObjectCategory.ANIMAL || m.category == ObjectCategory.ENVIRONMENT
-                    }
-
-                    val chosenRawLabel = when {
-                        !detectorLabel.isNullOrBlank() &&
-                        !detectorLabel.equals("Home good", ignoreCase = true) &&
-                        !detectorLabel.equals("Fashion good", ignoreCase = true) &&
-                        !detectorLabel.equals("Place", ignoreCase = true) -> detectorLabel
-
-                        livingSceneLabel != null && results.none { it.label.equals(livingSceneLabel.first, ignoreCase = true) } -> {
-                            livingSceneLabel.first
+                    // Resolve label without fake living data:
+                    val resolvedLabel = when {
+                        // A. Coarse "Home good" is strictly inanimate furniture/household
+                        detectorLabel.equals("Home good", ignoreCase = true) -> {
+                            val matchingItem = dominantLabels.firstOrNull { pair ->
+                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                                m.category == ObjectCategory.FURNITURE ||
+                                m.category == ObjectCategory.ELECTRONICS ||
+                                m.category == ObjectCategory.EVERYDAY
+                            }
+                            matchingItem?.first ?: "Household Item"
                         }
 
-                        dominantLabels.isNotEmpty() -> {
-                            dominantLabels.getOrNull(index)?.first ?: dominantLabels.first().first
+                        // B. Coarse "Fashion good" is clothing, bag, or footwear
+                        detectorLabel.equals("Fashion good", ignoreCase = true) -> {
+                            val matchingFashion = dominantLabels.firstOrNull { pair ->
+                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                                m.category == ObjectCategory.EVERYDAY
+                            }
+                            matchingFashion?.first ?: "Clothing Item"
                         }
 
+                        // C. Food
+                        detectorLabel.equals("Food", ignoreCase = true) -> {
+                            val matchingFood = dominantLabels.firstOrNull { pair ->
+                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                                m.englishName.equals("Food Item", ignoreCase = true) ||
+                                pair.first.contains("food", ignoreCase = true) ||
+                                pair.first.contains("fruit", ignoreCase = true)
+                            }
+                            matchingFood?.first ?: "Food"
+                        }
+
+                        // D. Plant
+                        detectorLabel.equals("Plant", ignoreCase = true) -> {
+                            "Plant"
+                        }
+
+                        // E. Place (wall/door/structure)
+                        detectorLabel.equals("Place", ignoreCase = true) -> {
+                            val matchingStructure = dominantLabels.firstOrNull { pair ->
+                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
+                                m.category == ObjectCategory.ENVIRONMENT && !m.isFlora
+                            }
+                            matchingStructure?.first ?: "Structure"
+                        }
+
+                        // F. Specific non-empty label directly from object detector
                         !detectorLabel.isNullOrBlank() -> detectorLabel
+
+                        // G. Detector had no coarse label; check if high-confidence object label is in dominantLabels
+                        dominantLabels.isNotEmpty() -> {
+                            val topCandidate = dominantLabels.firstOrNull()
+                            if (topCandidate != null && topCandidate.second >= 0.60f) {
+                                val metaCheck = YoloObjectTaxonomy.resolveLabel(topCandidate.first)
+                                // Never classify as animal from background label unless confidence is very high (>= 0.75f)
+                                if (metaCheck.category == ObjectCategory.ANIMAL) {
+                                    if (topCandidate.second >= 0.75f) topCandidate.first else "Obstacle"
+                                } else {
+                                    topCandidate.first
+                                }
+                            } else {
+                                "Obstacle"
+                            }
+                        }
+
                         else -> "Obstacle"
                     }
 
-                    val meta = YoloObjectTaxonomy.resolveLabel(chosenRawLabel)
+                    val meta = YoloObjectTaxonomy.resolveLabel(resolvedLabel)
                     val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
                         meta = meta,
                         heightRatio = heightRatio,
@@ -256,7 +308,7 @@ class ObjectDetectorHelper(
                             DetectedObject(
                                 label = meta.englishName,
                                 hindiLabel = meta.hindiName,
-                                confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.70f,
+                                confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.75f,
                                 boundingBox = rectF,
                                 position = position,
                                 proximity = proximity,
@@ -268,47 +320,6 @@ class ObjectDetectorHelper(
                                 isBeyondThreshold = false
                             )
                         )
-                    }
-                }
-
-                // 3. Synthesize Living Entities (Animals, Pets, Flora) if missed by bounding box detector
-                val livingLabels = dominantLabels.filter { pair ->
-                    val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                    (m.category == ObjectCategory.ANIMAL || m.category == ObjectCategory.PERSON || m.category == ObjectCategory.ENVIRONMENT) &&
-                    results.none { it.category == m.category || it.label.equals(m.englishName, ignoreCase = true) }
-                }
-
-                for (livingPair in livingLabels.take(2)) {
-                    val meta = YoloObjectTaxonomy.resolveLabel(livingPair.first)
-                    // High confidence animal or plant in the scene
-                    if (livingPair.second >= 0.45f) {
-                        val estimatedDistanceMeters = if (livingPair.second > 0.70f) 1.8f else 2.5f
-                        if (estimatedDistanceMeters <= maxRangeMeters) {
-                            val proximity = ProximityTier.NEARBY
-                            val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
-                            val rectF = RectF(
-                                imageWidth * 0.25f,
-                                imageHeight * 0.25f,
-                                imageWidth * 0.75f,
-                                imageHeight * 0.75f
-                            )
-                            results.add(
-                                DetectedObject(
-                                    label = meta.englishName,
-                                    hindiLabel = meta.hindiName,
-                                    confidence = livingPair.second,
-                                    boundingBox = rectF,
-                                    position = SpatialPosition.CENTER,
-                                    proximity = proximity,
-                                    priority = priority,
-                                    estimatedDistanceMeters = estimatedDistanceMeters,
-                                    distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
-                                    distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
-                                    category = meta.category,
-                                    isBeyondThreshold = false
-                                )
-                            )
-                        }
                     }
                 }
 
