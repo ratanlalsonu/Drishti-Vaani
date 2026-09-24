@@ -21,7 +21,8 @@ import kotlin.math.abs
 class DirectionOrientationTracker(
     context: Context,
     private val onDirectionMoved: () -> Unit,
-    private val onDirectionSettled: (azimuth: Float, pitch: Float, directionNameHi: String, directionNameEn: String) -> Unit
+    private val onDirectionSettled: (azimuth: Float, pitch: Float, directionNameHi: String, directionNameEn: String) -> Unit,
+    private val onAzimuthChanged: ((azimuth: Float, directionNameHi: String, directionNameEn: String) -> Unit)? = null
 ) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
@@ -130,6 +131,8 @@ class DirectionOrientationTracker(
     private fun checkOrientationShift(azimuth: Float, pitch: Float) {
         currentAzimuth = azimuth
         currentPitch = pitch
+        val (hiName, enName) = getDirectionNames(azimuth)
+        onAzimuthChanged?.invoke(azimuth, hiName, enName)
 
         // First initialization
         if (lastSettledAzimuth < -500f) {

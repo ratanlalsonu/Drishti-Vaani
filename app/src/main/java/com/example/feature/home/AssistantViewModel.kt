@@ -68,6 +68,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     var onLeaveVisionScreen: (() -> Unit)? = null
     var onLeaveOcrScreen: (() -> Unit)? = null
     var onOcrRepeatRequested: (() -> Unit)? = null
+    var onLocationRequested: (() -> Unit)? = null
+    var onLeaveNavigationScreen: (() -> Unit)? = null
 
     private val navigationBackStack = mutableListOf("home")
 
@@ -239,13 +241,16 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     navigationBackStack.add("navigation")
                 }
                 _uiState.update { it.copy(activeScreen = "navigation") }
-                speakFeedback("Aapki location check ki ja rahi hai.", "Checking your current location.")
+                onLocationRequested?.invoke()
             }
 
             is VoiceCommand.FindNearby -> {
                 hapticManager.triggerConfirmation()
+                if (navigationBackStack.lastOrNull() != "navigation") {
+                    navigationBackStack.add("navigation")
+                }
                 _uiState.update { it.copy(activeScreen = "navigation") }
-                speakFeedback("Paas ke ${command.placeType} ki khoj ki ja rahi hai.", "Finding nearest ${command.placeType}.")
+                onLocationRequested?.invoke()
             }
 
             is VoiceCommand.Emergency -> {
@@ -445,6 +450,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         when (screenName) {
             "vision" -> onLeaveVisionScreen?.invoke()
             "ocr" -> onLeaveOcrScreen?.invoke()
+            "navigation" -> onLeaveNavigationScreen?.invoke()
         }
     }
 

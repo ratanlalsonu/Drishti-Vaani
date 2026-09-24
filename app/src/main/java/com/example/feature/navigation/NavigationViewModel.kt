@@ -2,20 +2,20 @@ package com.example.feature.navigation
 
 import android.annotation.SuppressLint
 import android.app.Application
-import android.content.Intent
 import android.location.Geocoder
-import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.core.accessibility.HapticFeedbackManager
 import com.example.core.model.AssistantLanguage
 import com.example.core.model.PriorityLevel
+import com.example.feature.vision.DirectionOrientationTracker
 import com.example.feature.voice.TTSManager
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,13 +27,11 @@ import java.util.Locale
 data class NavigationUiState(
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val currentAddress: String = "Locating via device GPS...",
-    val nearbyResults: List<String> = emptyList(),
+    val currentAddress: String = "GPS से लोकेशन खोजी जा रही है...",
+    val currentDirectionHi: String = "जांच की जा रही है...",
+    val currentDirectionEn: String = "Determining heading...",
+    val currentAzimuth: Float = 0f,
     val isLocating: Boolean = false,
-    val isNavigating: Boolean = false,
-    val activeDestination: String = "",
-    val activeDestinationHi: String = "",
-    val activeQuery: String = "",
     val spokenInstruction: String = ""
 )
 
@@ -49,16 +47,101 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
     private var ttsManager: TTSManager? = null
     private var currentLanguage = AssistantLanguage.HINDI
 
-    private var pendingFacilityType: String? = null
+    // Track first-time open announcements: exactly 2 times
+    private var hasInitialAnnouncementsCompleted = false
+    private var initialRepeatJob: Job? = null
+
+    // Compass and Direction Tracker
+    private var directionTracker: DirectionOrientationTracker? = null
+    private var currentDirectionHi = ""
+    private var currentDirectionEn = ""
+    private var currentAzimuth = 0f
+
+    init {
+        try {
+            directionTracker = DirectionOrientationTracker(
+                context = application,
+                onDirectionMoved = {},
+                onDirectionSettled = { azimuth, _, dirHi, dirEn ->
+                    currentAzimuth = azimuth
+                    currentDirectionHi = dirHi
+                    currentDirectionEn = dirEn
+                    _uiState.update {
+                        it.copy(
+                            currentAzimuth = azimuth,
+                            currentDirectionHi = dirHi,
+                            currentDirectionEn = dirEn
+                        )
+                    }
+                },
+                onAzimuthChanged = { azimuth, dirHi, dirEn ->
+                    currentAzimuth = azimuth
+                    currentDirectionHi = dirHi
+                    currentDirectionEn = dirEn
+                    _uiState.update {
+                        it.copy(
+                            currentAzimuth = azimuth,
+                            currentDirectionHi = dirHi,
+                            currentDirectionEn = dirEn
+                        )
+                    }
+                }
+            )
+            directionTracker?.start()
+        } catch (_: Exception) {}
+    }
 
     fun attachTTS(tts: TTSManager, language: AssistantLanguage) {
         this.ttsManager = tts
         this.currentLanguage = language
     }
 
+    /**
+     * Called when the Navigation screen is opened.
+     * Behavior:
+     * - First time open: Speaks the user's location & facing direction exactly 2 times.
+     * - Subsequent opens: Updates silently; user speaks "दिशा" or "नेविगेशन" to hear on-demand.
+     */
+    fun onNavigationScreenOpened() {
+        directionTracker?.start()
+        if (!hasInitialAnnouncementsCompleted) {
+            requestLocationWithInitialRepetition()
+        } else {
+            silentLocationUpdate()
+        }
+    }
+
+    fun onNavigationScreenClosed() {
+        initialRepeatJob?.cancel()
+        initialRepeatJob = null
+        directionTracker?.stop()
+    }
+
+    private fun getFacingDirectionSpeech(isHindi: Boolean): String {
+        return if (isHindi) {
+            if (currentDirectionHi.isNotBlank() && !currentDirectionHi.contains("जांच")) {
+                "आपका मुख $currentDirectionHi की ओर है।"
+            } else {
+                val (hi, _) = DirectionOrientationTracker.getDirectionNames(currentAzimuth)
+                "आपका मुख $hi की ओर है।"
+            }
+        } else {
+            if (currentDirectionEn.isNotBlank() && !currentDirectionEn.contains("Determining")) {
+                "You are facing $currentDirectionEn."
+            } else {
+                val (_, en) = DirectionOrientationTracker.getDirectionNames(currentAzimuth)
+                "You are facing $en."
+            }
+        }
+    }
+
+    /**
+     * Automatically called ONLY on the first-time navigation open:
+     * Announces location & facing direction exactly 2 times, then permanently stops automatic speech.
+     */
     @SuppressLint("MissingPermission")
-    fun requestCurrentLocation() {
-        _uiState.update { it.copy(isLocating = true, currentAddress = "Acquiring real GPS coordinates...") }
+    private fun requestLocationWithInitialRepetition() {
+        _uiState.update { it.copy(isLocating = true, currentAddress = "GPS से लोकेशन खोजी जा रही है...") }
 
         fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
             .addOnSuccessListener { location ->
@@ -72,25 +155,52 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
                             isLocating = false
                         )
                     }
-                    reverseGeocode(lat, lng)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val address = resolveAddress(lat, lng)
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(currentAddress = address) }
+                            hapticManager.triggerConfirmation()
 
-                    // If user requested a facility while GPS was acquiring, route immediately
-                    val pending = pendingFacilityType
-                    if (pending != null) {
-                        pendingFacilityType = null
-                        findNearbyFacility(pending)
+                            val isHindi = currentLanguage == AssistantLanguage.HINDI
+                            val dirSpeech = getFacingDirectionSpeech(isHindi)
+
+                            // 1st Announcement
+                            val announcement1 = if (isHindi) {
+                                "आपकी वर्तमान स्थिति है: $address। $dirSpeech"
+                            } else {
+                                "Your current location is: $address. $dirSpeech"
+                            }
+                            _uiState.update { it.copy(spokenInstruction = announcement1) }
+                            ttsManager?.speak(announcement1, PriorityLevel.HIGH)
+
+                            // 2nd Announcement (Repetition for clarity after 3.8s)
+                            initialRepeatJob?.cancel()
+                            initialRepeatJob = viewModelScope.launch {
+                                delay(3800L)
+                                val announcement2 = if (isHindi) {
+                                    "दोहराया जा रहा है: $address। $dirSpeech दोबारा जानने के लिए 'नेविगेशन' या 'दिशा' बोलें।"
+                                } else {
+                                    "Repeating: $address. $dirSpeech To hear again, say 'Navigation' or 'Direction'."
+                                }
+                                _uiState.update { it.copy(spokenInstruction = announcement2) }
+                                ttsManager?.speak(announcement2, PriorityLevel.HIGH)
+                                hasInitialAnnouncementsCompleted = true
+                            }
+                        }
                     }
                 } else {
                     _uiState.update {
                         it.copy(
                             isLocating = false,
-                            currentAddress = "Could not retrieve GPS fix. Ensure device location is turned on."
+                            currentAddress = "GPS सिग्नल नहीं मिला। कृपया फ़ोन का GPS ऑन रखें।"
                         )
                     }
-                    val msg = if (currentLanguage == AssistantLanguage.HINDI) {
-                        "Aapki location prapt nahi ho saki. Kripya phone ka GPS on karein."
+                    val isHindi = currentLanguage == AssistantLanguage.HINDI
+                    val dirSpeech = getFacingDirectionSpeech(isHindi)
+                    val msg = if (isHindi) {
+                        "GPS लोकेशन प्राप्त नहीं हो सकी। $dirSpeech"
                     } else {
-                        "Could not determine current location. Please verify GPS is enabled."
+                        "GPS location unavailable. $dirSpeech"
                     }
                     ttsManager?.speak(msg, PriorityLevel.HIGH)
                 }
@@ -99,164 +209,112 @@ class NavigationViewModel(application: Application) : AndroidViewModel(applicati
                 _uiState.update {
                     it.copy(
                         isLocating = false,
-                        currentAddress = "GPS error: ${error.localizedMessage}"
+                        currentAddress = "GPS त्रुटि: ${error.localizedMessage}"
                     )
                 }
             }
     }
 
-    private fun reverseGeocode(lat: Double, lng: Double) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                @Suppress("DEPRECATION")
-                val addresses = geocoder.getFromLocation(lat, lng, 1)
-                val address = addresses?.firstOrNull()?.getAddressLine(0) ?: "Lat: $lat, Lng: $lng"
-                handleAddressResult(address)
-            } catch (e: Exception) {
-                handleAddressResult("Location: $lat, $lng")
-            }
-        }
-    }
+    /**
+     * Called whenever user speaks ("navigation", "disha", "location", "kahan hoon", etc.)
+     * or taps the Location/Compass button.
+     * Tells the current location and facing direction on-demand.
+     */
+    @SuppressLint("MissingPermission")
+    fun requestLocationSpokenOnDemand() {
+        hapticManager.triggerConfirmation()
 
-    private suspend fun handleAddressResult(address: String) {
-        withContext(Dispatchers.Main) {
-            _uiState.update { it.copy(currentAddress = address) }
-            hapticManager.triggerConfirmation()
+        val currentLat = _uiState.value.latitude
+        val currentLng = _uiState.value.longitude
+        val currentAddr = _uiState.value.currentAddress
+        val isHindi = currentLanguage == AssistantLanguage.HINDI
+        val dirSpeech = getFacingDirectionSpeech(isHindi)
 
-            val announcement = if (currentLanguage == AssistantLanguage.HINDI) {
-                "Aapki vartaman sthiti hai: $address"
+        // If we already have a resolved address, announce it immediately to avoid latency
+        if (currentLat != null && currentLng != null &&
+            !currentAddr.startsWith("GPS से") && !currentAddr.startsWith("Acquiring")) {
+            val announcement = if (isHindi) {
+                "आपकी वर्तमान स्थिति है: $currentAddr। $dirSpeech"
             } else {
-                "Your current location is: $address"
+                "Your current location is: $currentAddr. $dirSpeech"
             }
             _uiState.update { it.copy(spokenInstruction = announcement) }
             ttsManager?.speak(announcement, PriorityLevel.HIGH)
-        }
-    }
-
-    fun findNearbyFacility(facilityType: String) {
-        val lat = _uiState.value.latitude
-        val lng = _uiState.value.longitude
-
-        val (query, nameHi, nameEn) = when (facilityType.lowercase().trim()) {
-            "police", "thana", "police station" -> Triple("Police Station", "पुलिस थाना", "Police Station")
-            "hospital", "clinic" -> Triple("Hospital Clinic", "अस्पताल", "Hospital")
-            "pharmacy", "chemist", "dawa" -> Triple("Pharmacy Chemist", "दवा की दुकान", "Pharmacy")
-            "atm", "bank" -> Triple("ATM Bank", "एटीएम बैंक", "ATM")
-            "bus stop", "railway", "station", "transit_station" -> Triple("Bus Stop", "बस स्टॉप", "Bus Stop")
-            "home", "ghar" -> Triple("Home", "घर", "Home")
-            else -> Triple(facilityType, facilityType, facilityType)
-        }
-
-        _uiState.update {
-            it.copy(
-                isNavigating = true,
-                activeDestination = nameEn,
-                activeDestinationHi = nameHi,
-                activeQuery = query
-            )
-        }
-
-        hapticManager.triggerConfirmation()
-
-        if (lat == null || lng == null) {
-            pendingFacilityType = facilityType
-            val waitingMsg = if (currentLanguage == AssistantLanguage.HINDI) {
-                "GPS लोकेशन प्राप्त की जा रही है, फिर नज़दीकी $nameHi का रास्ता शुरू होगा..."
-            } else {
-                "Acquiring GPS location, then routing to nearest $nameEn..."
-            }
-            _uiState.update { it.copy(spokenInstruction = waitingMsg) }
-            ttsManager?.speak(waitingMsg, PriorityLevel.HIGH)
-            requestCurrentLocation()
-            return
-        }
-
-        val spokenMsg = if (currentLanguage == AssistantLanguage.HINDI) {
-            "नज़दीकी $nameHi के लिए वॉकिंग नेविगेशन शुरू किया जा रहा है। Google Maps में आवाज़ द्वारा मुड़ने के निर्देश मिलेंगे।"
         } else {
-            "Starting walking navigation to nearest $nameEn. Google Maps will provide turn-by-turn spoken guidance."
+            val waitMsg = if (isHindi) {
+                "GPS लोकेशन जांची जा रही है... $dirSpeech"
+            } else {
+                "Checking GPS location... $dirSpeech"
+            }
+            _uiState.update { it.copy(spokenInstruction = waitMsg) }
+            ttsManager?.speak(waitMsg, PriorityLevel.HIGH)
         }
-        _uiState.update { it.copy(spokenInstruction = spokenMsg) }
-        ttsManager?.speak(spokenMsg, PriorityLevel.CRITICAL)
 
-        launchNavigationIntent(query)
+        // Fetch fresh coordinates in background
+        _uiState.update { it.copy(isLocating = true) }
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { location ->
+                _uiState.update { it.copy(isLocating = false) }
+                if (location != null) {
+                    val lat = location.latitude
+                    val lng = location.longitude
+                    _uiState.update { it.copy(latitude = lat, longitude = lng) }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val freshAddress = resolveAddress(lat, lng)
+                        withContext(Dispatchers.Main) {
+                            val hadNoPrior = currentLat == null || currentLng == null ||
+                                    currentAddr.startsWith("GPS से") || currentAddr.startsWith("Acquiring")
+                            _uiState.update { it.copy(currentAddress = freshAddress) }
+                            if (hadNoPrior) {
+                                val freshDirSpeech = getFacingDirectionSpeech(isHindi)
+                                val announcement = if (isHindi) {
+                                    "आपकी वर्तमान स्थिति है: $freshAddress। $freshDirSpeech"
+                                } else {
+                                    "Your current location is: $freshAddress. $freshDirSpeech"
+                                }
+                                _uiState.update { it.copy(spokenInstruction = announcement) }
+                                ttsManager?.speak(announcement, PriorityLevel.HIGH)
+                            }
+                        }
+                    }
+                }
+            }
+            .addOnFailureListener {
+                _uiState.update { it.copy(isLocating = false) }
+            }
     }
 
-    fun launchNavigationIntent(query: String? = null) {
-        val targetQuery = query ?: _uiState.value.activeQuery
-        if (targetQuery.isBlank()) return
+    @SuppressLint("MissingPermission")
+    private fun silentLocationUpdate() {
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
+            .addOnSuccessListener { location ->
+                if (location != null) {
+                    val lat = location.latitude
+                    val lng = location.longitude
+                    _uiState.update { it.copy(latitude = lat, longitude = lng) }
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val address = resolveAddress(lat, lng)
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(currentAddress = address) }
+                        }
+                    }
+                }
+            }
+    }
 
-        val lat = _uiState.value.latitude
-        val lng = _uiState.value.longitude
-        val context = getApplication<Application>().applicationContext
-
-        hapticManager.triggerConfirmation()
-
-        try {
-            // Method 1: Google Maps Walking Navigation (ideal for visually impaired pedestrian)
-            val gmmUri = Uri.parse("google.navigation:q=${Uri.encode(targetQuery)}&mode=w")
-            val mapIntent = Intent(Intent.ACTION_VIEW, gmmUri).apply {
-                setPackage("com.google.android.apps.maps")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-
-            if (mapIntent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(mapIntent)
-                return
-            }
-
-            // Method 2: Standard Geo URI with query
-            val geoUri = if (lat != null && lng != null) {
-                Uri.parse("geo:$lat,$lng?q=${Uri.encode(targetQuery)}")
-            } else {
-                Uri.parse("geo:0,0?q=${Uri.encode(targetQuery)}")
-            }
-            val geoIntent = Intent(Intent.ACTION_VIEW, geoUri).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-
-            if (geoIntent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(geoIntent)
-                return
-            }
-
-            // Method 3: Browser Maps fallback
-            val webUri = if (lat != null && lng != null) {
-                Uri.parse("https://www.google.com/maps/dir/?api=1&origin=$lat,$lng&destination=${Uri.encode(targetQuery)}&travelmode=walking")
-            } else {
-                Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode(targetQuery)}")
-            }
-            val webIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(webIntent)
-        } catch (e: Exception) {
-            Log.e("NavigationVM", "Could not launch navigation: ${e.message}")
-            val errorMsg = if (currentLanguage == AssistantLanguage.HINDI) {
-                "Maps app open nahi ho saka: ${e.localizedMessage}"
-            } else {
-                "Could not open maps application: ${e.localizedMessage}"
-            }
-            ttsManager?.speak(errorMsg, PriorityLevel.HIGH)
+    private fun resolveAddress(lat: Double, lng: Double): String {
+        return try {
+            @Suppress("DEPRECATION")
+            val addresses = geocoder.getFromLocation(lat, lng, 1)
+            addresses?.firstOrNull()?.getAddressLine(0) ?: "Lat: ${"%.4f".format(lat)}, Lng: ${"%.4f".format(lng)}"
+        } catch (_: Exception) {
+            "Lat: ${"%.4f".format(lat)}, Lng: ${"%.4f".format(lng)}"
         }
     }
 
-    fun stopNavigation() {
-        _uiState.update {
-            it.copy(
-                isNavigating = false,
-                activeDestination = "",
-                activeDestinationHi = "",
-                activeQuery = ""
-            )
-        }
-        hapticManager.triggerConfirmation()
-        val msg = if (currentLanguage == AssistantLanguage.HINDI) {
-            "नेविगेशन समाप्त किया गया।"
-        } else {
-            "Navigation stopped."
-        }
-        _uiState.update { it.copy(spokenInstruction = msg) }
-        ttsManager?.speak(msg, PriorityLevel.HIGH)
+    override fun onCleared() {
+        super.onCleared()
+        initialRepeatJob?.cancel()
+        try { directionTracker?.stop() } catch (_: Exception) {}
     }
 }

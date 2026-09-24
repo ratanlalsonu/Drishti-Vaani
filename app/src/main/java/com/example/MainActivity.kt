@@ -157,6 +157,12 @@ fun AppRoot(
         assistantViewModel.onOcrRepeatRequested = {
             ocrViewModel.repeatReading()
         }
+        assistantViewModel.onLocationRequested = {
+            navigationViewModel.requestLocationSpokenOnDemand()
+        }
+        assistantViewModel.onLeaveNavigationScreen = {
+            navigationViewModel.onNavigationScreenClosed()
+        }
 
         // Start auto-listening immediately if audio permission is already granted
         val hasMic = ContextCompat.checkSelfPermission(
@@ -173,6 +179,7 @@ fun AppRoot(
     BackHandler(enabled = uiState.activeScreen != "home") {
         visionViewModel.stopVisionSession()
         ocrViewModel.stopReading()
+        navigationViewModel.onNavigationScreenClosed()
         assistantViewModel.ttsManager.stopSpeaking()
         assistantViewModel.navigateBack()
     }

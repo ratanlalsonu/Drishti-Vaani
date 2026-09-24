@@ -147,18 +147,26 @@ object VoiceCommandParser {
                 "bachaao", "इमरजेंसी", "बचाओ", "मदद करो", "सहायता", "खतरा", "एसओएस", "आपातकाल", "हेल्प मी"
             ) -> VoiceCommand.Emergency
 
-            // 9. Direct jumping to Location / GPS Navigation from ANY screen
+            // 9. Direct jumping to Location / GPS Navigation / Direction from ANY screen
             containsAny(
                 normalized,
                 "navigation", "gps", "where am i", "main kahan hoon", "main kahan hu",
                 "kahan hu", "kaha hu", "kahan hoon", "kaha hoon", "location", "meri location",
-                "location batao", "rasta dikhao", "rasta batao", "meri jagah", "navigation par le chalo",
-                "gps kholo", "navigation screen", "kahan par hu", "kaha pe hu", "kahan pe hu",
-                "kahan par hoon", "rasta", "मैं कहाँ हूँ", "मैं कहां हूं", "कहाँ हूँ",
-                "कहां हूं", "मेरी लोकेशन", "लोकेशन बताओ", "कहाँ पर हूँ", "कहां पर हूं",
-                "रास्ता दिखाओ", "रास्ता बताओ", "नेविगेशन", "जीपीएस", "मेरी जगह", "कहाँ हूँ मैं",
-                "स्थान बताओ", "स्थान", "लोकेशन"
-            ) -> VoiceCommand.WhereAmI
+                "current location", "location batao", "rasta dikhao", "rasta batao", "rasta", "raste",
+                "meri jagah", "navigation par le chalo", "gps kholo", "navigation screen",
+                "kahan par hu", "kaha pe hu", "kahan pe hu", "kahan par hoon",
+                "disha", "disa", "dishayein", "disha batao", "disa batao", "meri disha", "meri disa",
+                "kis disha mein", "kis disha me", "direction", "directions", "heading",
+                "compass", "sthan", "sthan batao", "vartaman sthiti", "sthiti batao",
+                "मैं कहाँ हूँ", "मैं कहां हूं", "कहाँ हूँ", "कहां हूं", "मेरी लोकेशन",
+                "लोकेशन बताओ", "लोकेशन", "कहाँ पर हूँ", "कहां पर हूं", "रास्ता दिखाओ",
+                "रास्ता बताओ", "रास्ता", "नेविगेशन", "नेविगेशन खोलो", "नेविगेशन बताओ",
+                "जीपीएस", "मेरी जगह", "कहाँ हूँ मैं", "स्थान बताओ", "स्थान",
+                "दिशा", "दिशा बताओ", "दिशाएं", "मेरी दिशा", "किस दिशा में", "वर्तमान स्थिति"
+            ) || normalized == "navigation" || normalized == "नेविगेशन" ||
+               normalized == "disha" || normalized == "disa" || normalized == "दिशा" ||
+               normalized == "location" || normalized == "लोकेशन" ||
+               normalized == "direction" || normalized == "rasta" || normalized == "रास्ता" -> VoiceCommand.WhereAmI
 
             // 10. Find Nearby Place intents
             containsAny(normalized, "hospital", "aspatal", "अस्पताल", "हॉस्पिटल", "दवाखाना") ->

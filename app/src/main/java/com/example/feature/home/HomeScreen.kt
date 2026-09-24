@@ -357,8 +357,8 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     AccessibleTile(
-                        title = "Navigation",
-                        subtitle = "GPS दिशा",
+                        title = "Location & Facing",
+                        subtitle = "लोकेशन व दिशा",
                         icon = Icons.Default.NearMe,
                         accentColor = HighContrastYellow,
                         modifier = Modifier.weight(1f),
