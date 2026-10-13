@@ -188,7 +188,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             "Detection range set to ${range.labelEn}."
         }
         ttsManager?.speak(speech, PriorityLevel.HIGH)
-        announceDirectionSurroundingsOnce(force = true)
+        announceDirectionSurroundingsOnce(force = false)
     }
 
     fun onDetectionsReceived(objects: List<DetectedObject>, width: Int, height: Int) {
@@ -205,31 +205,54 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                 previewWidth = width,
                 previewHeight = height,
                 isAnalyzing = true,
-                cameraStatus = "Active (${validRangeObjects.size} in ${_uiState.value.rangeLimit.maxMeters.toInt()}m range)"
+                cameraStatus = if (validRangeObjects.isEmpty()) "Scanning for Tables..." else "Table in View (${validRangeObjects.size})"
             )
         }
 
-        // 1. If vision moved to this direction for the first time and has settled,
-        // announce front, left, and right ONCE:
-        if (!_uiState.value.hasAnnouncedCurrentDirection && _uiState.value.isDirectionSettled) {
-            announceDirectionSurroundingsOnce(force = false)
+        // Proactively alert the user whenever a Table enters the view/range
+        val primaryTable = validRangeObjects.minByOrNull { it.estimatedDistanceMeters }
+        if (primaryTable != null && throttler.shouldAnnounce(primaryTable)) {
+            val tableAlert = if (currentLanguage == AssistantLanguage.HINDI) {
+                val dir = when (primaryTable.position) {
+                    SpatialPosition.LEFT -> "बाईं ओर"
+                    SpatialPosition.RIGHT -> "दाईं ओर"
+                    SpatialPosition.CENTER -> "सामने"
+                }
+                "$dir मेज़ है (${primaryTable.distanceDescriptionHi})।"
+            } else {
+                val dir = when (primaryTable.position) {
+                    SpatialPosition.LEFT -> "on your left"
+                    SpatialPosition.RIGHT -> "on your right"
+                    SpatialPosition.CENTER -> "ahead"
+                }
+                "Table $dir (${primaryTable.distanceDescriptionEn})."
+            }
+            _uiState.update {
+                it.copy(
+                    hasAnnouncedCurrentDirection = true,
+                    lastVocalized = tableAlert
+                )
+            }
+            hapticManager.triggerConfirmation()
+            ttsManager?.speak(tableAlert, PriorityLevel.HIGH)
+            recordDetection(primaryTable)
             return
         }
 
-        // 2. If already announced for this direction, DO NOT repeat automatically.
-        // Maintain silence as long as user keeps facing this direction!
-        // To re-announce in the same direction, user explicitly asks by voice or taps button.
+        // When sweeping direction, only announce once if table was found
+        if (!_uiState.value.hasAnnouncedCurrentDirection && _uiState.value.isDirectionSettled) {
+            announceDirectionSurroundingsOnce(force = false)
+        }
     }
 
     /**
-     * Announces what is in front (सामने), left (बाईं ओर), and right (दाईं ओर).
-     * If force = false, it only announces once per direction and then remains silent.
-     * If force = true (user asks by voice or taps button), it re-announces on-demand.
+     * Announces table status: what table is in front (सामने), left (बाईं ओर), or right (दाईं ओर).
+     * If force = false and no table is detected, it stays completely SILENT (no '10m path is clear' chatter).
+     * If force = true (user explicitly asks 'what is ahead' or taps info), it answers directly.
      */
     fun announceDirectionSurroundingsOnce(force: Boolean = false) {
         if (!isVisionSessionActive && !force) return
         if (!force && _uiState.value.hasAnnouncedCurrentDirection) {
-            // Already announced for this direction; do not repeat automatically!
             return
         }
 
@@ -244,39 +267,47 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         val rightObj = validRangeObjects.filter { it.position == SpatialPosition.RIGHT }
             .minByOrNull { it.estimatedDistanceMeters }
 
+        val hasTable = centerObj != null || leftObj != null || rightObj != null
+
+        // If no table is found and not an explicit on-demand user question, REMAIN COMPLETELY SILENT!
+        if (!hasTable && !force) {
+            _uiState.update { it.copy(hasAnnouncedCurrentDirection = true) }
+            return
+        }
+
         val speech = if (currentLanguage == AssistantLanguage.HINDI) {
             val parts = mutableListOf<String>()
             if (centerObj != null) {
-                parts.add("सामने ${centerObj.hindiLabel} (${centerObj.distanceDescriptionHi})")
+                parts.add("सामने मेज़ है (${centerObj.distanceDescriptionHi})")
             }
             if (leftObj != null) {
-                parts.add("बाईं ओर ${leftObj.hindiLabel} (${leftObj.distanceDescriptionHi})")
+                parts.add("बाईं ओर मेज़ है (${leftObj.distanceDescriptionHi})")
             }
             if (rightObj != null) {
-                parts.add("दाईं ओर ${rightObj.hindiLabel} (${rightObj.distanceDescriptionHi})")
+                parts.add("दाईं ओर मेज़ है (${rightObj.distanceDescriptionHi})")
             }
 
             if (parts.isNotEmpty()) {
                 parts.joinToString(", ") + "।"
             } else {
-                "${_uiState.value.rangeLimit.maxMeters.toInt()} मीटर के दायरे में रास्ता साफ है।"
+                "सामने कोई मेज़ नहीं दिखी।"
             }
         } else {
             val parts = mutableListOf<String>()
             if (centerObj != null) {
-                parts.add("Ahead: ${centerObj.label} (${centerObj.distanceDescriptionEn})")
+                parts.add("Table ahead (${centerObj.distanceDescriptionEn})")
             }
             if (leftObj != null) {
-                parts.add("On your left: ${leftObj.label} (${leftObj.distanceDescriptionEn})")
+                parts.add("Table on your left (${leftObj.distanceDescriptionEn})")
             }
             if (rightObj != null) {
-                parts.add("On your right: ${rightObj.label} (${rightObj.distanceDescriptionEn})")
+                parts.add("Table on your right (${rightObj.distanceDescriptionEn})")
             }
 
             if (parts.isNotEmpty()) {
                 parts.joinToString(", ") + "."
             } else {
-                "Clear path within ${_uiState.value.rangeLimit.maxMeters.toInt()} meters."
+                "No table detected ahead."
             }
         }
 

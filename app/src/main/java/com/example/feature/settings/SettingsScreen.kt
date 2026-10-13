@@ -63,7 +63,7 @@ fun SettingsScreen(
     onSpeechRateChanged: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var speechRate by remember { mutableFloatStateOf(1.0f) }
+    var speechRate by remember { mutableFloatStateOf(0.75f) }
     var hapticsEnabled by remember { mutableStateOf(true) }
 
     Surface(

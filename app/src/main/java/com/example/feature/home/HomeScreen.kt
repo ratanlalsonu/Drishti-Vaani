@@ -215,7 +215,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = uiState.assistantFeedback.ifEmpty { "Aap bol sakte hain: 'कैमरा चालू करो', 'सामने क्या है', 'किताब पढ़ो', या 'मदद'." },
+                            text = uiState.assistantFeedback.ifEmpty { "Hello, I am Drishti Vaani." },
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,

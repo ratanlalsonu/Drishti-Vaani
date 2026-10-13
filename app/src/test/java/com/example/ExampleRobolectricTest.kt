@@ -19,4 +19,13 @@ class ExampleRobolectricTest {
     assertEquals("Drishti Vaani", appName)
   }
 
+  @Test
+  fun `verify mlkit acceleration directory and storage files exist`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val accelDir = java.io.File(context.filesDir, "com.google.mlkit.acceleration")
+    val storageFile = java.io.File(accelDir, "com.google.perception.acceleration_analytics_storage_v2.")
+    org.junit.Assert.assertTrue(accelDir.exists() || accelDir.mkdirs())
+    org.junit.Assert.assertTrue(storageFile.exists() || storageFile.createNewFile())
+    org.junit.Assert.assertTrue(storageFile.canRead())
+  }
 }

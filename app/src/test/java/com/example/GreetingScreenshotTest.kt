@@ -25,7 +25,7 @@ class GreetingScreenshotTest {
       MyApplicationTheme {
         com.example.feature.home.HomeScreen(
           uiState = com.example.feature.home.AssistantUiState(
-            assistantFeedback = "Namaste. I am Drishti Vaani."
+            assistantFeedback = "Hello, I am Drishti Vaani."
           ),
           onMicClick = {},
           onNavigate = {},

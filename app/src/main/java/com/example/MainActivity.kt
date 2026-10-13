@@ -84,11 +84,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Ensure ML Kit local cache & acceleration storage directory exists to avoid native proto_data_store file error
+        // Ensure ML Kit local cache & acceleration storage directory and files exist to avoid native proto_data_store file error
         try {
             val accelDir = java.io.File(filesDir, "com.google.mlkit.acceleration")
             if (!accelDir.exists()) {
                 accelDir.mkdirs()
+            }
+            val storageFiles = listOf(
+                "com.google.perception.acceleration_analytics_storage_v2.",
+                "com.google.perception.acceleration_analytics_storage_v2"
+            )
+            for (filename in storageFiles) {
+                val targetFile = java.io.File(accelDir, filename)
+                if (!targetFile.exists()) {
+                    targetFile.createNewFile()
+                }
+                targetFile.setReadable(true, false)
+                targetFile.setWritable(true, false)
             }
         } catch (_: Exception) {}
 

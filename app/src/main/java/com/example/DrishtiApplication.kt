@@ -17,10 +17,18 @@ class DrishtiApplication : Application() {
             if (!accelerationDir.exists()) {
                 accelerationDir.mkdirs()
             }
-            // Do not keep a 0-byte dummy file which corrupts native protobuf parsing
-            val dummyFile = File(accelerationDir, "com.google.perception.acceleration_analytics_storage_v2.")
-            if (dummyFile.exists() && dummyFile.length() == 0L) {
-                dummyFile.delete()
+            // Ensure acceleration storage files exist so native proto_data_store can open them without ENOENT error
+            val storageFiles = listOf(
+                "com.google.perception.acceleration_analytics_storage_v2.",
+                "com.google.perception.acceleration_analytics_storage_v2"
+            )
+            for (filename in storageFiles) {
+                val targetFile = File(accelerationDir, filename)
+                if (!targetFile.exists()) {
+                    targetFile.createNewFile()
+                }
+                targetFile.setReadable(true, false)
+                targetFile.setWritable(true, false)
             }
         } catch (e: Exception) {
             Log.w("DrishtiApplication", "Could not ensure ML Kit acceleration directory: ${e.message}")

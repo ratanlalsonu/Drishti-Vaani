@@ -15,7 +15,7 @@ class TTSManager(context: Context, private val onInitCompleted: (Boolean) -> Uni
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var currentLanguage = AssistantLanguage.HINDI
-    private var speechRate = 1.0f
+    private var speechRate = 0.75f
     private var speechPitch = 1.0f
     private var lastSpokenText: String = ""
 

@@ -388,10 +388,10 @@ fun VisionScreen(
                 Text(
                     text = if (!uiState.isDirectionSettled) {
                         "नई दिशा स्कैन हो रही है..."
-                    } else if (uiState.hasAnnouncedCurrentDirection) {
-                        "✓ एक बार बोला गया • 'सामने क्या है' बोलें"
+                    } else if (uiState.detections.isNotEmpty()) {
+                        "✓ मेज़ (Table) डिटेक्टेड"
                     } else {
-                        "पहचान जारी है..."
+                        "मेज़ की खोज जारी है..."
                     },
                     color = if (!uiState.isDirectionSettled) HighContrastYellow else HighContrastGreen,
                     fontSize = 11.sp,

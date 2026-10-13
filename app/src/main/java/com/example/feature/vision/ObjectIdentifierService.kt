@@ -82,75 +82,37 @@ class ObjectIdentifierService(private val context: Context) {
 
         val isHumanFaceDetected = faces.isNotEmpty()
 
-        // 4. Select top real object label
-        val chosenRawLabel = when {
-            isHumanFaceDetected -> "person"
-            meaningfulLabels.isNotEmpty() -> meaningfulLabels.first().text
-            rawLabels.isNotEmpty() -> rawLabels.first().text
-            else -> "Obstacle"
-        }
+        val tableTerms = listOf("table", "desk", "dining table", "coffee table", "tabletop", "nightstand", "workbench")
+        val isTable = rawLabels.any { label -> tableTerms.any { label.text.contains(it, ignoreCase = true) } }
 
-        val meta = YoloObjectTaxonomy.resolveLabel(chosenRawLabel)
-        val objectName = if (language == AssistantLanguage.HINDI) meta.hindiName else meta.englishName
-
-        // Filter significant words from OCR (like "Dettol", "Paracetamol", "500", "Amul", "Crocin")
         val significantText = recognizedText.lines()
             .map { it.trim() }
             .filter { line -> line.length in 3..30 && line.any { ch -> ch.isLetterOrDigit() } }
             .take(2)
             .joinToString(", ")
 
-        // Generate truthful, clear voice description distinguishing Living vs Non-Living:
-        val description = when {
-            // A. Living Human
-            meta.category == ObjectCategory.PERSON -> {
-                if (language == AssistantLanguage.HINDI) {
-                    "सामने व्यक्ति (इंसान) उपस्थित हैं।"
-                } else {
-                    "A person is present in front of you."
-                }
+        val description = if (isTable) {
+            if (language == AssistantLanguage.HINDI) {
+                if (significantText.isNotBlank()) "सामने मेज़ (Table) उपस्थित है। लिखा है: $significantText" else "सामने मेज़ (Table) उपस्थित है।"
+            } else {
+                if (significantText.isNotBlank()) "Table detected in front. Text reads: $significantText" else "Table detected in front."
             }
-
-            // B. Living Animal
-            meta.category == ObjectCategory.ANIMAL -> {
-                if (language == AssistantLanguage.HINDI) {
-                    "सामने सजीव प्राणी ($objectName) उपस्थित है।"
-                } else {
-                    "There is an animal ($objectName) in front of you."
-                }
-            }
-
-            // C. Living Flora (Plants / Trees)
-            meta.isFlora -> {
-                if (language == AssistantLanguage.HINDI) {
-                    "सामने सजीव पौधा या वृक्ष ($objectName) उपस्थित है।"
-                } else {
-                    "There is a $objectName in front of you."
-                }
-            }
-
-            // D. Non-Living Inanimate Object (Furniture, Electronics, Utensils, Household, etc.)
-            else -> {
-                if (language == AssistantLanguage.HINDI) {
-                    val base = "सामने यह वस्तु $objectName है।"
-                    if (significantText.isNotBlank()) {
-                        "$base इस पर लिखा है: $significantText"
-                    } else {
-                        base
-                    }
-                } else {
-                    val base = "The object in front is $objectName."
-                    if (significantText.isNotBlank()) {
-                        "$base Label text reads: $significantText"
-                    } else {
-                        base
-                    }
-                }
+        } else {
+            if (language == AssistantLanguage.HINDI) {
+                "सामने कोई मेज़ नहीं दिखी।"
+            } else {
+                "No table detected in front."
             }
         }
 
+        val title = if (isTable) {
+            if (language == AssistantLanguage.HINDI) "मेज़ (Table)" else "Table"
+        } else {
+            if (language == AssistantLanguage.HINDI) "कोई मेज़ नहीं" else "No Table"
+        }
+
         return ObjectIdentityResult(
-            title = objectName,
+            title = title,
             description = description,
             isAiVerified = false,
             detectedText = recognizedText

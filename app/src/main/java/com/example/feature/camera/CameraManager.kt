@@ -22,14 +22,26 @@ class CameraManager(
     private var isStarted = false
 
     init {
-        // Ensure acceleration analytics directory exists to prevent native proto_data_store log warnings
+        // Ensure acceleration analytics directory and storage files exist to prevent native proto_data_store log warnings
         try {
             val accelDir = File(context.filesDir, "com.google.mlkit.acceleration")
             if (!accelDir.exists()) {
                 accelDir.mkdirs()
             }
+            val storageFiles = listOf(
+                "com.google.perception.acceleration_analytics_storage_v2.",
+                "com.google.perception.acceleration_analytics_storage_v2"
+            )
+            for (filename in storageFiles) {
+                val targetFile = File(accelDir, filename)
+                if (!targetFile.exists()) {
+                    targetFile.createNewFile()
+                }
+                targetFile.setReadable(true, false)
+                targetFile.setWritable(true, false)
+            }
         } catch (e: Exception) {
-            Log.w("CameraManager", "Could not create mlkit acceleration dir: ${e.message}")
+            Log.w("CameraManager", "Could not create mlkit acceleration files: ${e.message}")
         }
     }
 

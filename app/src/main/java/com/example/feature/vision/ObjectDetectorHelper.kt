@@ -137,62 +137,8 @@ class ObjectDetectorHelper(
                 val dominantLabels = cachedSceneLabels
 
                 val results = mutableListOf<DetectedObject>()
-                val matchedFaceCenters = mutableListOf<Float>()
 
-                // 1. Process Detected Living Humans (Faces)
-                for (face in detectedFaces) {
-                    val faceBox = face.boundingBox
-                    val centerXRatio = faceBox.centerX().toFloat() / imageWidth.toFloat()
-                    val position = when {
-                        centerXRatio < 0.33f -> SpatialPosition.LEFT
-                        centerXRatio > 0.66f -> SpatialPosition.RIGHT
-                        else -> SpatialPosition.CENTER
-                    }
-
-                    // A human head/face has average height ~0.24 meters
-                    val faceHeightRatio = (faceBox.height().toFloat() / imageHeight.toFloat()).coerceIn(0.015f, 1.0f)
-
-                    val meta = YoloObjectTaxonomy.resolveLabel("person")
-                    val estimatedDistanceMeters = ((0.24f * 1.15f) / faceHeightRatio).coerceIn(0.4f, 30.0f)
-                    val roundedDistance = (kotlin.math.round(estimatedDistanceMeters * 10f) / 10f)
-
-                    if (roundedDistance <= maxRangeMeters) {
-                        matchedFaceCenters.add(centerXRatio)
-
-                        // Extrapolate approximate full body bounding box for person
-                        val bodyLeft = (faceBox.left - faceBox.width() * 0.5f).coerceAtLeast(0f)
-                        val bodyRight = (faceBox.right + faceBox.width() * 0.5f).coerceAtMost(imageWidth.toFloat())
-                        val bodyTop = faceBox.top.toFloat().coerceAtLeast(0f)
-                        val bodyBottom = (faceBox.top + faceBox.height() * 5.0f).coerceAtMost(imageHeight.toFloat())
-                        val rectF = RectF(bodyLeft, bodyTop, bodyRight, bodyBottom)
-
-                        val proximity = when {
-                            roundedDistance < 1.5f -> ProximityTier.VERY_CLOSE
-                            roundedDistance < 4.5f -> ProximityTier.NEARBY
-                            else -> ProximityTier.FAR
-                        }
-                        val priority = determinePriority(meta, proximity, roundedDistance)
-
-                        results.add(
-                            DetectedObject(
-                                label = meta.englishName,
-                                hindiLabel = meta.hindiName,
-                                confidence = 0.92f,
-                                boundingBox = rectF,
-                                position = position,
-                                proximity = proximity,
-                                priority = priority,
-                                estimatedDistanceMeters = roundedDistance,
-                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(roundedDistance, isHindi = true),
-                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(roundedDistance, isHindi = false),
-                                category = ObjectCategory.PERSON,
-                                isBeyondThreshold = false
-                            )
-                        )
-                    }
-                }
-
-                // 2. Process Detected Real Objects with Bounding Boxes (Zero synthetic data!)
+                // Only detect specifically a TABLE as requested
                 for (obj in detectedObjects) {
                     val box = obj.boundingBox
                     val rectF = RectF(
@@ -209,87 +155,19 @@ class ObjectDetectorHelper(
                         else -> SpatialPosition.CENTER
                     }
 
-                    // Avoid duplicate if a verified human face was already mapped here
-                    val isAlreadyPerson = matchedFaceCenters.any { kotlin.math.abs(it - centerX) < 0.22f }
-                    if (isAlreadyPerson && results.any { it.category == ObjectCategory.PERSON && it.position == position }) {
-                        continue
-                    }
-
                     val heightRatio = rectF.height() / imageHeight.toFloat()
                     val widthRatio = rectF.width() / imageWidth.toFloat()
 
                     val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text?.trim()
+                    val allObjLabels = obj.labels.map { it.text.trim().lowercase(Locale.ROOT) }
 
-                    // Resolve label without fake living data:
-                    val resolvedLabel = when {
-                        // A. Coarse "Home good" is strictly inanimate furniture/household
-                        detectorLabel.equals("Home good", ignoreCase = true) -> {
-                            val matchingItem = dominantLabels.firstOrNull { pair ->
-                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                                m.category == ObjectCategory.FURNITURE ||
-                                m.category == ObjectCategory.ELECTRONICS ||
-                                m.category == ObjectCategory.EVERYDAY
-                            }
-                            matchingItem?.first ?: "Household Item"
-                        }
-
-                        // B. Coarse "Fashion good" is clothing, bag, or footwear
-                        detectorLabel.equals("Fashion good", ignoreCase = true) -> {
-                            val matchingFashion = dominantLabels.firstOrNull { pair ->
-                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                                m.category == ObjectCategory.EVERYDAY
-                            }
-                            matchingFashion?.first ?: "Clothing Item"
-                        }
-
-                        // C. Food
-                        detectorLabel.equals("Food", ignoreCase = true) -> {
-                            val matchingFood = dominantLabels.firstOrNull { pair ->
-                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                                m.englishName.equals("Food Item", ignoreCase = true) ||
-                                pair.first.contains("food", ignoreCase = true) ||
-                                pair.first.contains("fruit", ignoreCase = true)
-                            }
-                            matchingFood?.first ?: "Food"
-                        }
-
-                        // D. Plant
-                        detectorLabel.equals("Plant", ignoreCase = true) -> {
-                            "Plant"
-                        }
-
-                        // E. Place (wall/door/structure)
-                        detectorLabel.equals("Place", ignoreCase = true) -> {
-                            val matchingStructure = dominantLabels.firstOrNull { pair ->
-                                val m = YoloObjectTaxonomy.resolveLabel(pair.first)
-                                m.category == ObjectCategory.ENVIRONMENT && !m.isFlora
-                            }
-                            matchingStructure?.first ?: "Structure"
-                        }
-
-                        // F. Specific non-empty label directly from object detector
-                        !detectorLabel.isNullOrBlank() -> detectorLabel
-
-                        // G. Detector had no coarse label; check if high-confidence object label is in dominantLabels
-                        dominantLabels.isNotEmpty() -> {
-                            val topCandidate = dominantLabels.firstOrNull()
-                            if (topCandidate != null && topCandidate.second >= 0.60f) {
-                                val metaCheck = YoloObjectTaxonomy.resolveLabel(topCandidate.first)
-                                // Never classify as animal from background label unless confidence is very high (>= 0.75f)
-                                if (metaCheck.category == ObjectCategory.ANIMAL) {
-                                    if (topCandidate.second >= 0.75f) topCandidate.first else "Obstacle"
-                                } else {
-                                    topCandidate.first
-                                }
-                            } else {
-                                "Obstacle"
-                            }
-                        }
-
-                        else -> "Obstacle"
+                    // Strict Table verification
+                    val isTable = isTableObject(detectorLabel, allObjLabels, dominantLabels)
+                    if (!isTable) {
+                        continue // Ignore any non-table object
                     }
 
-                    val meta = YoloObjectTaxonomy.resolveLabel(resolvedLabel)
+                    val meta = YoloObjectTaxonomy.resolveLabel("table")
                     val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
                         meta = meta,
                         heightRatio = heightRatio,
@@ -306,9 +184,9 @@ class ObjectDetectorHelper(
 
                         results.add(
                             DetectedObject(
-                                label = meta.englishName,
-                                hindiLabel = meta.hindiName,
-                                confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.75f,
+                                label = "Table",
+                                hindiLabel = "मेज़",
+                                confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.85f,
                                 boundingBox = rectF,
                                 position = position,
                                 proximity = proximity,
@@ -316,7 +194,42 @@ class ObjectDetectorHelper(
                                 estimatedDistanceMeters = estimatedDistanceMeters,
                                 distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
                                 distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
-                                category = meta.category,
+                                category = ObjectCategory.FURNITURE,
+                                isBeyondThreshold = false
+                            )
+                        )
+                    }
+                }
+
+                // If bounding box detector missed it but scene-level classifier confirms a table
+                if (results.isEmpty()) {
+                    val tableScene = dominantLabels.firstOrNull { (label, conf) ->
+                        conf >= 0.50f && listOf("table", "desk", "dining table", "coffee table", "tabletop").any {
+                            label.contains(it, ignoreCase = true)
+                        }
+                    }
+                    if (tableScene != null) {
+                        val meta = YoloObjectTaxonomy.resolveLabel("table")
+                        val rectF = RectF(
+                            imageWidth * 0.15f,
+                            imageHeight * 0.25f,
+                            imageWidth * 0.85f,
+                            imageHeight * 0.75f
+                        )
+                        val estimatedDistanceMeters = 2.0f
+                        results.add(
+                            DetectedObject(
+                                label = "Table",
+                                hindiLabel = "मेज़",
+                                confidence = tableScene.second,
+                                boundingBox = rectF,
+                                position = SpatialPosition.CENTER,
+                                proximity = ProximityTier.NEARBY,
+                                priority = PriorityLevel.HIGH,
+                                estimatedDistanceMeters = estimatedDistanceMeters,
+                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
+                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
+                                category = ObjectCategory.FURNITURE,
                                 isBeyondThreshold = false
                             )
                         )
@@ -341,6 +254,27 @@ class ObjectDetectorHelper(
                 } catch (_: Exception) {}
                 isAnalyzingFrame = false
             }
+    }
+
+    private fun isTableObject(
+        detectorLabel: String?,
+        allObjLabels: List<String>,
+        dominantLabels: List<Pair<String, Float>>
+    ): Boolean {
+        val tableTerms = listOf("table", "desk", "dining table", "coffee table", "tabletop", "nightstand", "workbench")
+        if (detectorLabel != null && tableTerms.any { detectorLabel.contains(it, ignoreCase = true) }) {
+            return true
+        }
+        if (allObjLabels.any { label -> tableTerms.any { label.contains(it, ignoreCase = true) } }) {
+            return true
+        }
+        val hasSceneTable = dominantLabels.any { (label, conf) ->
+            conf >= 0.35f && tableTerms.any { label.contains(it, ignoreCase = true) }
+        }
+        if (hasSceneTable && (detectorLabel == null || detectorLabel.equals("Home good", ignoreCase = true) || detectorLabel.equals("Furniture", ignoreCase = true))) {
+            return true
+        }
+        return false
     }
 
     private fun determinePriority(

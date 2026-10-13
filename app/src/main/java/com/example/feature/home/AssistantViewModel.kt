@@ -129,9 +129,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun triggerStartupGreeting() {
-        val greeting = when (_uiState.value.currentLanguage) {
-            AssistantLanguage.HINDI -> "नमस्ते. मैं दृष्टि वाणी हूँ, आपका विजुअल साथी. कैमरा शुरू करने के लिए 'कैमरा चालू करो' या 'हेल्प' बोलिये."
-            else -> "Namaste. I am Drishti Vaani, your visual companion. Say 'Start Vision' or 'Help'."
+        val greeting = if (_uiState.value.currentLanguage == AssistantLanguage.HINDI) {
+            "हेलो, मैं दृष्टि वाणी हूँ।"
+        } else {
+            "Hello, I am Drishti Vaani."
         }
         _uiState.update { it.copy(assistantFeedback = greeting) }
         ttsManager.speak(greeting, PriorityLevel.HIGH)
