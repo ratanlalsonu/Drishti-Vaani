@@ -138,7 +138,7 @@ class ObjectDetectorHelper(
 
                 val results = mutableListOf<DetectedObject>()
 
-                // Only detect specifically a TABLE as requested
+                // Detect specifically TABLES and structural ROOM PILLARS as requested
                 for (obj in detectedObjects) {
                     val box = obj.boundingBox
                     val rectF = RectF(
@@ -161,13 +161,19 @@ class ObjectDetectorHelper(
                     val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text?.trim()
                     val allObjLabels = obj.labels.map { it.text.trim().lowercase(Locale.ROOT) }
 
-                    // Strict Table verification
+                    // Check for Table and Pillar targets
                     val isTable = isTableObject(detectorLabel, allObjLabels, dominantLabels)
-                    if (!isTable) {
-                        continue // Ignore any non-table object
+                    val isPillar = !isTable && isPillarObject(detectorLabel, allObjLabels, dominantLabels, heightRatio, widthRatio)
+
+                    if (!isTable && !isPillar) {
+                        continue // Strictly ignore any non-table, non-pillar object
                     }
 
-                    val meta = YoloObjectTaxonomy.resolveLabel("table")
+                    val labelEn = if (isTable) "Table" else "Pillar"
+                    val labelHi = if (isTable) "मेज़" else "खंभा"
+                    val metaKey = if (isTable) "table" else "pillar"
+                    val meta = YoloObjectTaxonomy.resolveLabel(metaKey)
+
                     val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
                         meta = meta,
                         heightRatio = heightRatio,
@@ -180,57 +186,98 @@ class ObjectDetectorHelper(
                             estimatedDistanceMeters < 4.5f -> ProximityTier.NEARBY
                             else -> ProximityTier.FAR
                         }
-                        val priority = determinePriority(meta, proximity, estimatedDistanceMeters)
+                        val priority = if (isPillar) {
+                            if (estimatedDistanceMeters < 2.0f) PriorityLevel.CRITICAL else PriorityLevel.HIGH
+                        } else {
+                            determinePriority(meta, proximity, estimatedDistanceMeters)
+                        }
+
+                        val distanceFeet = kotlin.math.round(estimatedDistanceMeters * 3.28f).toInt().coerceAtLeast(1)
+
+                        // Step-by-step avoidance guidance to safely navigate around the obstacle
+                        val evasionAdviceEn = when (position) {
+                            SpatialPosition.CENTER -> "Please move aside by 2 to 3 feet to your right to avoid collision."
+                            SpatialPosition.LEFT -> "Please move aside by 2 to 3 feet to your right to avoid collision."
+                            SpatialPosition.RIGHT -> "Please move aside by 2 to 3 feet to your left to avoid collision."
+                        }
+
+                        val evasionAdviceHi = when (position) {
+                            SpatialPosition.CENTER -> "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटें।"
+                            SpatialPosition.LEFT -> "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटें।"
+                            SpatialPosition.RIGHT -> "टकराने से बचने के लिए कृपया 2 से 3 फीट बाईं ओर हटें।"
+                        }
 
                         results.add(
                             DetectedObject(
-                                label = "Table",
-                                hindiLabel = "मेज़",
+                                label = labelEn,
+                                hindiLabel = labelHi,
                                 confidence = obj.labels.maxByOrNull { it.confidence }?.confidence ?: 0.85f,
                                 boundingBox = rectF,
                                 position = position,
                                 proximity = proximity,
                                 priority = priority,
                                 estimatedDistanceMeters = estimatedDistanceMeters,
-                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
-                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
-                                category = ObjectCategory.FURNITURE,
-                                isBeyondThreshold = false
+                                distanceDescriptionHi = "$distanceFeet फीट (${kotlin.math.round(estimatedDistanceMeters * 10f) / 10f}m)",
+                                distanceDescriptionEn = "$distanceFeet feet (${kotlin.math.round(estimatedDistanceMeters * 10f) / 10f}m)",
+                                category = if (isTable) ObjectCategory.FURNITURE else ObjectCategory.ENVIRONMENT,
+                                isBeyondThreshold = false,
+                                distanceFeet = distanceFeet,
+                                evasionAdviceEn = evasionAdviceEn,
+                                evasionAdviceHi = evasionAdviceHi
                             )
                         )
                     }
                 }
 
-                // If bounding box detector missed it but scene-level classifier confirms a table
+                // If bounding box detector missed it but scene-level classifier confirms a table or pillar
                 if (results.isEmpty()) {
                     val tableScene = dominantLabels.firstOrNull { (label, conf) ->
                         conf >= 0.50f && listOf("table", "desk", "dining table", "coffee table", "tabletop").any {
                             label.contains(it, ignoreCase = true)
                         }
                     }
-                    if (tableScene != null) {
-                        val meta = YoloObjectTaxonomy.resolveLabel("table")
+                    val pillarScene = dominantLabels.firstOrNull { (label, conf) ->
+                        conf >= 0.50f && listOf("pillar", "column", "support pillar", "structural column", "post").any {
+                            label.contains(it, ignoreCase = true)
+                        }
+                    }
+
+                    if (tableScene != null || pillarScene != null) {
+                        val isTable = tableScene != null
+                        val labelEn = if (isTable) "Table" else "Pillar"
+                        val labelHi = if (isTable) "मेज़" else "खंभा"
+                        val metaKey = if (isTable) "table" else "pillar"
+                        val meta = YoloObjectTaxonomy.resolveLabel(metaKey)
+                        val conf = tableScene?.second ?: pillarScene?.second ?: 0.70f
                         val rectF = RectF(
-                            imageWidth * 0.15f,
-                            imageHeight * 0.25f,
-                            imageWidth * 0.85f,
-                            imageHeight * 0.75f
+                            imageWidth * 0.20f,
+                            imageHeight * 0.15f,
+                            imageWidth * 0.80f,
+                            imageHeight * 0.85f
                         )
-                        val estimatedDistanceMeters = 2.0f
+                        val estimatedDistanceMeters = if (isTable) 1.8f else 2.4f
+                        val distanceFeet = kotlin.math.round(estimatedDistanceMeters * 3.28f).toInt().coerceAtLeast(1)
+
+                        val evasionAdviceEn = "Please move aside by 2 to 3 feet to your right to avoid collision."
+                        val evasionAdviceHi = "टकराने से बचने के लिए कृपया 2-3 फीट दाईं ओर हटें।"
+
                         results.add(
                             DetectedObject(
-                                label = "Table",
-                                hindiLabel = "मेज़",
-                                confidence = tableScene.second,
+                                label = labelEn,
+                                hindiLabel = labelHi,
+                                confidence = conf,
                                 boundingBox = rectF,
                                 position = SpatialPosition.CENTER,
                                 proximity = ProximityTier.NEARBY,
                                 priority = PriorityLevel.HIGH,
                                 estimatedDistanceMeters = estimatedDistanceMeters,
-                                distanceDescriptionHi = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = true),
-                                distanceDescriptionEn = YoloObjectTaxonomy.getDistanceDescription(estimatedDistanceMeters, isHindi = false),
-                                category = ObjectCategory.FURNITURE,
-                                isBeyondThreshold = false
+                                distanceDescriptionHi = "$distanceFeet फीट (${estimatedDistanceMeters}m)",
+                                distanceDescriptionEn = "$distanceFeet feet (${estimatedDistanceMeters}m)",
+                                category = if (isTable) ObjectCategory.FURNITURE else ObjectCategory.ENVIRONMENT,
+                                isBeyondThreshold = false,
+                                distanceFeet = distanceFeet,
+                                evasionAdviceEn = evasionAdviceEn,
+                                evasionAdviceHi = evasionAdviceHi
                             )
                         )
                     }
@@ -271,8 +318,42 @@ class ObjectDetectorHelper(
         val hasSceneTable = dominantLabels.any { (label, conf) ->
             conf >= 0.35f && tableTerms.any { label.contains(it, ignoreCase = true) }
         }
-        if (hasSceneTable && (detectorLabel == null || detectorLabel.equals("Home good", ignoreCase = true) || detectorLabel.equals("Furniture", ignoreCase = true))) {
+        if (hasSceneTable && (detectorLabel.isNullOrBlank() || detectorLabel.equals("Home good", ignoreCase = true) || detectorLabel.equals("Furniture", ignoreCase = true))) {
             return true
+        }
+        return false
+    }
+
+    private fun isPillarObject(
+        detectorLabel: String?,
+        allObjLabels: List<String>,
+        dominantLabels: List<Pair<String, Float>>,
+        heightRatio: Float,
+        widthRatio: Float
+    ): Boolean {
+        val pillarTerms = listOf("pillar", "column", "post", "pole", "support pillar", "structural column", "pier", "beam")
+        if (detectorLabel != null && pillarTerms.any { detectorLabel.contains(it, ignoreCase = true) }) {
+            return true
+        }
+        if (allObjLabels.any { label -> pillarTerms.any { label.contains(it, ignoreCase = true) } }) {
+            return true
+        }
+        val hasScenePillar = dominantLabels.any { (label, conf) ->
+            conf >= 0.35f && pillarTerms.any { label.contains(it, ignoreCase = true) }
+        }
+        if (hasScenePillar && (detectorLabel.isNullOrBlank() || detectorLabel.equals("Place", ignoreCase = true) || detectorLabel.equals("Structure", ignoreCase = true) || detectorLabel.equals("Home good", ignoreCase = true))) {
+            return true
+        }
+        // Vertical architectural column spanning room structure
+        if (heightRatio > 0.35f && widthRatio < heightRatio * 0.85f) {
+            val isArchitecture = dominantLabels.any { (label, conf) ->
+                conf >= 0.35f && listOf("architecture", "interior design", "building", "column", "pillar", "wall", "room").any {
+                    label.contains(it, ignoreCase = true)
+                }
+            }
+            if (isArchitecture && (detectorLabel.isNullOrBlank() || detectorLabel.equals("Place", ignoreCase = true) || detectorLabel.equals("Structure", ignoreCase = true))) {
+                return true
+            }
         }
         return false
     }

@@ -385,17 +385,23 @@ fun VisionScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                val hasTable = uiState.detections.any { it.label.equals("Table", ignoreCase = true) }
+                val hasPillar = uiState.detections.any { it.label.equals("Pillar", ignoreCase = true) }
                 Text(
                     text = if (!uiState.isDirectionSettled) {
                         "नई दिशा स्कैन हो रही है..."
-                    } else if (uiState.detections.isNotEmpty()) {
-                        "✓ मेज़ (Table) डिटेक्टेड"
+                    } else if (hasTable && hasPillar) {
+                        "⚠️ मेज़ और खंभा डिटेक्टेड"
+                    } else if (hasPillar) {
+                        "⚠️ खंभा (Pillar) डिटेक्टेड"
+                    } else if (hasTable) {
+                        "⚠️ मेज़ (Table) डिटेक्टेड"
                     } else {
-                        "मेज़ की खोज जारी है..."
+                        "मेज़ और खंभों की निगरानी जारी..."
                     },
-                    color = if (!uiState.isDirectionSettled) HighContrastYellow else HighContrastGreen,
+                    color = if (!uiState.isDirectionSettled) HighContrastYellow else if (uiState.detections.isNotEmpty()) HighContrastRed else HighContrastGreen,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -523,6 +529,71 @@ fun VisionScreen(
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp
                             )
+                        }
+                    }
+                }
+
+                // Real-time Collision Detective & Avoidance Guidance Card
+                if (uiState.closestObstacle != null) {
+                    val obstacle = uiState.closestObstacle
+                    val isCritical = obstacle.distanceFeet <= 4 || obstacle.priority == PriorityLevel.CRITICAL
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                contentDescription = "Collision Warning: ${obstacle.label} at ${obstacle.distanceFeet} feet. Guidance: ${obstacle.evasionAdviceEn}"
+                            },
+                        colors = CardDefaults.cardColors(containerColor = AccessibleBlack),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            2.dp,
+                            if (isCritical) HighContrastRed else HighContrastYellow
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = if (isCritical) "🚨 COLLISION ALERT" else "⚠️ OBSTACLE DETECTED",
+                                        color = if (isCritical) HighContrastRed else HighContrastYellow,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                Text(
+                                    text = "${obstacle.distanceFeet} FT (${obstacle.estimatedDistanceMeters}m)",
+                                    color = HighContrastCyan,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${obstacle.hindiLabel} (${obstacle.label}) ${obstacle.position.spokenLabelHi}",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AccessibleDarkSurface)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "👉 ${obstacle.evasionAdviceHi}",
+                                    color = HighContrastYellow,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }

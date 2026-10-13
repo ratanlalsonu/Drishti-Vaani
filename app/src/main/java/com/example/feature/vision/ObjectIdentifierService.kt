@@ -83,7 +83,10 @@ class ObjectIdentifierService(private val context: Context) {
         val isHumanFaceDetected = faces.isNotEmpty()
 
         val tableTerms = listOf("table", "desk", "dining table", "coffee table", "tabletop", "nightstand", "workbench")
+        val pillarTerms = listOf("pillar", "column", "post", "pole", "support pillar", "structural column", "pier", "beam")
+
         val isTable = rawLabels.any { label -> tableTerms.any { label.text.contains(it, ignoreCase = true) } }
+        val isPillar = !isTable && rawLabels.any { label -> pillarTerms.any { label.text.contains(it, ignoreCase = true) } }
 
         val significantText = recognizedText.lines()
             .map { it.trim() }
@@ -91,24 +94,36 @@ class ObjectIdentifierService(private val context: Context) {
             .take(2)
             .joinToString(", ")
 
-        val description = if (isTable) {
-            if (language == AssistantLanguage.HINDI) {
-                if (significantText.isNotBlank()) "सामने मेज़ (Table) उपस्थित है। लिखा है: $significantText" else "सामने मेज़ (Table) उपस्थित है।"
-            } else {
-                if (significantText.isNotBlank()) "Table detected in front. Text reads: $significantText" else "Table detected in front."
+        val description = when {
+            isTable -> {
+                if (language == AssistantLanguage.HINDI) {
+                    if (significantText.isNotBlank()) "सामने मेज़ (Table) उपस्थित है। लिखा है: $significantText। टकराने से बचने के लिए कृपया 2-3 फीट बगल में हटें।"
+                    else "सामने मेज़ (Table) उपस्थित है। टकराने से बचने के लिए कृपया 2-3 फीट बगल में हटें।"
+                } else {
+                    if (significantText.isNotBlank()) "Table detected in front. Text reads: $significantText. Please move aside by 2 to 3 feet to avoid collision."
+                    else "Table detected in front. Please move aside by 2 to 3 feet to avoid collision."
+                }
             }
-        } else {
-            if (language == AssistantLanguage.HINDI) {
-                "सामने कोई मेज़ नहीं दिखी।"
-            } else {
-                "No table detected in front."
+            isPillar -> {
+                if (language == AssistantLanguage.HINDI) {
+                    "सामने कमरे का सहायक खंभा (Pillar) उपस्थित है। टकराने से बचने के लिए कृपया 2-3 फीट बगल में हटें।"
+                } else {
+                    "Structural room pillar detected in front. Please move aside by 2 to 3 feet to avoid collision."
+                }
+            }
+            else -> {
+                if (language == AssistantLanguage.HINDI) {
+                    "सामने कोई मेज़ या खंभा नहीं दिखा। आगे का रास्ता सुरक्षित है।"
+                } else {
+                    "No table or structural pillar detected in front. Path is clear."
+                }
             }
         }
 
-        val title = if (isTable) {
-            if (language == AssistantLanguage.HINDI) "मेज़ (Table)" else "Table"
-        } else {
-            if (language == AssistantLanguage.HINDI) "कोई मेज़ नहीं" else "No Table"
+        val title = when {
+            isTable -> if (language == AssistantLanguage.HINDI) "मेज़ (Table)" else "Table"
+            isPillar -> if (language == AssistantLanguage.HINDI) "खंभा (Pillar)" else "Pillar"
+            else -> if (language == AssistantLanguage.HINDI) "रास्ता सुरक्षित" else "Path Clear"
         }
 
         return ObjectIdentityResult(

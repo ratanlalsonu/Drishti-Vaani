@@ -40,5 +40,8 @@ data class DetectedObject(
     val distanceDescriptionEn: String = "approx 2 meters",
     val category: ObjectCategory = ObjectCategory.OBSTACLE,
     val isBeyondThreshold: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val distanceFeet: Int = kotlin.math.round(estimatedDistanceMeters * 3.28f).toInt().coerceAtLeast(1),
+    val evasionAdviceEn: String = "",
+    val evasionAdviceHi: String = ""
 )

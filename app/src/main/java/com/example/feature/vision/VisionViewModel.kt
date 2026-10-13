@@ -33,7 +33,10 @@ data class VisionUiState(
     val currentDirectionEn: String = "Facing Ahead",
     val isDirectionSettled: Boolean = true,
     val hasAnnouncedCurrentDirection: Boolean = false,
-    val lastDirectionSummary: String = ""
+    val lastDirectionSummary: String = "",
+    val activeCollisionWarning: String = "",
+    val evasionGuidance: String = "",
+    val closestObstacle: DetectedObject? = null
 )
 
 class VisionViewModel(application: Application) : AndroidViewModel(application) {
@@ -199,55 +202,85 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         // Filter out any objects that exceed user range threshold (e.g. > 10m)
         val validRangeObjects = objects.filter { it.estimatedDistanceMeters <= currentMax }
 
+        val tableCount = validRangeObjects.count { it.label.equals("Table", ignoreCase = true) }
+        val pillarCount = validRangeObjects.count { it.label.equals("Pillar", ignoreCase = true) }
+        val primaryObstacle = validRangeObjects.minByOrNull { it.estimatedDistanceMeters }
+
+        val status = when {
+            validRangeObjects.isEmpty() -> "Scanning: Tables & Pillars"
+            tableCount > 0 && pillarCount > 0 -> "$tableCount Table, $pillarCount Pillar detected"
+            pillarCount > 0 -> "$pillarCount Pillar in View"
+            else -> "$tableCount Table in View"
+        }
+
+        val collisionWarning = if (primaryObstacle != null) {
+            "${primaryObstacle.label} ${primaryObstacle.distanceFeet} FT (${primaryObstacle.position.name})"
+        } else ""
+
+        val evasionText = if (primaryObstacle != null) {
+            if (currentLanguage == AssistantLanguage.HINDI) primaryObstacle.evasionAdviceHi else primaryObstacle.evasionAdviceEn
+        } else ""
+
         _uiState.update {
             it.copy(
                 detections = validRangeObjects,
                 previewWidth = width,
                 previewHeight = height,
                 isAnalyzing = true,
-                cameraStatus = if (validRangeObjects.isEmpty()) "Scanning for Tables..." else "Table in View (${validRangeObjects.size})"
+                cameraStatus = status,
+                activeCollisionWarning = collisionWarning,
+                evasionGuidance = evasionText,
+                closestObstacle = primaryObstacle
             )
         }
 
-        // Proactively alert the user whenever a Table enters the view/range
-        val primaryTable = validRangeObjects.minByOrNull { it.estimatedDistanceMeters }
-        if (primaryTable != null && throttler.shouldAnnounce(primaryTable)) {
-            val tableAlert = if (currentLanguage == AssistantLanguage.HINDI) {
-                val dir = when (primaryTable.position) {
+        // Proactively alert the user whenever a Table or Pillar enters path/range
+        if (primaryObstacle != null && throttler.shouldAnnounce(primaryObstacle)) {
+            val alertSpeech = if (currentLanguage == AssistantLanguage.HINDI) {
+                val posStr = when (primaryObstacle.position) {
                     SpatialPosition.LEFT -> "बाईं ओर"
                     SpatialPosition.RIGHT -> "दाईं ओर"
                     SpatialPosition.CENTER -> "सामने"
                 }
-                "$dir मेज़ है (${primaryTable.distanceDescriptionHi})।"
+                "सावधान! $posStr ${primaryObstacle.distanceFeet} फीट पर ${primaryObstacle.hindiLabel} है। ${primaryObstacle.evasionAdviceHi}"
             } else {
-                val dir = when (primaryTable.position) {
+                val posStr = when (primaryObstacle.position) {
                     SpatialPosition.LEFT -> "on your left"
                     SpatialPosition.RIGHT -> "on your right"
-                    SpatialPosition.CENTER -> "ahead"
+                    SpatialPosition.CENTER -> "directly ahead"
                 }
-                "Table $dir (${primaryTable.distanceDescriptionEn})."
+                "Warning! ${primaryObstacle.label} ${primaryObstacle.distanceFeet} feet $posStr. ${primaryObstacle.evasionAdviceEn}"
             }
+
             _uiState.update {
                 it.copy(
                     hasAnnouncedCurrentDirection = true,
-                    lastVocalized = tableAlert
+                    lastVocalized = alertSpeech
                 )
             }
-            hapticManager.triggerConfirmation()
-            ttsManager?.speak(tableAlert, PriorityLevel.HIGH)
-            recordDetection(primaryTable)
+
+            // Urgent tactile feedback if very close (< 4-5 feet) to prevent collision
+            if (primaryObstacle.distanceFeet <= 4 || primaryObstacle.priority == PriorityLevel.CRITICAL) {
+                hapticManager.triggerCriticalHazard()
+            } else {
+                hapticManager.triggerConfirmation()
+            }
+
+            ttsManager?.speak(alertSpeech, PriorityLevel.HIGH)
+            recordDetection(primaryObstacle)
             return
         }
 
-        // When sweeping direction, only announce once if table was found
+        // When sweeping direction, only announce once if table or pillar was found
         if (!_uiState.value.hasAnnouncedCurrentDirection && _uiState.value.isDirectionSettled) {
             announceDirectionSurroundingsOnce(force = false)
         }
     }
 
     /**
-     * Announces table status: what table is in front (सामने), left (बाईं ओर), or right (दाईं ओर).
-     * If force = false and no table is detected, it stays completely SILENT (no '10m path is clear' chatter).
+     * Announces obstacle status: warns about tables and structural pillars with calculative distance
+     * and step-by-step avoidance advice (move aside by 2-3 feet left or right).
+     * If force = false and no obstacle is detected, it stays completely SILENT.
      * If force = true (user explicitly asks 'what is ahead' or taps info), it answers directly.
      */
     fun announceDirectionSurroundingsOnce(force: Boolean = false) {
@@ -267,10 +300,10 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         val rightObj = validRangeObjects.filter { it.position == SpatialPosition.RIGHT }
             .minByOrNull { it.estimatedDistanceMeters }
 
-        val hasTable = centerObj != null || leftObj != null || rightObj != null
+        val hasObstacle = centerObj != null || leftObj != null || rightObj != null
 
-        // If no table is found and not an explicit on-demand user question, REMAIN COMPLETELY SILENT!
-        if (!hasTable && !force) {
+        // If no table or pillar is found and not an explicit on-demand user question, REMAIN SILENT!
+        if (!hasObstacle && !force) {
             _uiState.update { it.copy(hasAnnouncedCurrentDirection = true) }
             return
         }
@@ -278,36 +311,36 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         val speech = if (currentLanguage == AssistantLanguage.HINDI) {
             val parts = mutableListOf<String>()
             if (centerObj != null) {
-                parts.add("सामने मेज़ है (${centerObj.distanceDescriptionHi})")
+                parts.add("सामने ${centerObj.distanceFeet} फीट पर ${centerObj.hindiLabel} है। ${centerObj.evasionAdviceHi}")
             }
             if (leftObj != null) {
-                parts.add("बाईं ओर मेज़ है (${leftObj.distanceDescriptionHi})")
+                parts.add("बाईं ओर ${leftObj.distanceFeet} फीट पर ${leftObj.hindiLabel} है। ${leftObj.evasionAdviceHi}")
             }
             if (rightObj != null) {
-                parts.add("दाईं ओर मेज़ है (${rightObj.distanceDescriptionHi})")
+                parts.add("दाईं ओर ${rightObj.distanceFeet} फीट पर ${rightObj.hindiLabel} है। ${rightObj.evasionAdviceHi}")
             }
 
             if (parts.isNotEmpty()) {
-                parts.joinToString(", ") + "।"
+                parts.joinToString(" ")
             } else {
-                "सामने कोई मेज़ नहीं दिखी।"
+                "सामने कोई मेज़ या खंभा नहीं है।"
             }
         } else {
             val parts = mutableListOf<String>()
             if (centerObj != null) {
-                parts.add("Table ahead (${centerObj.distanceDescriptionEn})")
+                parts.add("Warning: ${centerObj.label} ${centerObj.distanceFeet} feet ahead. ${centerObj.evasionAdviceEn}")
             }
             if (leftObj != null) {
-                parts.add("Table on your left (${leftObj.distanceDescriptionEn})")
+                parts.add("Caution: ${leftObj.label} ${leftObj.distanceFeet} feet on your left. ${leftObj.evasionAdviceEn}")
             }
             if (rightObj != null) {
-                parts.add("Table on your right (${rightObj.distanceDescriptionEn})")
+                parts.add("Caution: ${rightObj.label} ${rightObj.distanceFeet} feet on your right. ${rightObj.evasionAdviceEn}")
             }
 
             if (parts.isNotEmpty()) {
-                parts.joinToString(", ") + "."
+                parts.joinToString(" ")
             } else {
-                "No table detected ahead."
+                "No table or pillar detected ahead."
             }
         }
 

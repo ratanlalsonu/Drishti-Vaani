@@ -151,4 +151,35 @@ class YoloObjectTaxonomyTest {
         assertEquals(ObjectCategory.EVERYDAY, bottles.category)
         assertEquals("Bottle", bottles.englishName)
     }
+
+    @Test
+    fun testPillarsAndColumnsResolution() {
+        val pillar = YoloObjectTaxonomy.resolveLabel("pillar")
+        assertEquals(ObjectCategory.ENVIRONMENT, pillar.category)
+        assertEquals("Pillar", pillar.englishName)
+        assertTrue(pillar.isCriticalHazard)
+
+        val column = YoloObjectTaxonomy.resolveLabel("column")
+        assertEquals(ObjectCategory.ENVIRONMENT, column.category)
+        assertTrue(column.isCriticalHazard)
+
+        val supportPillar = YoloObjectTaxonomy.resolveLabel("support pillar")
+        assertEquals(ObjectCategory.ENVIRONMENT, supportPillar.category)
+        assertTrue(supportPillar.isCriticalHazard)
+
+        val structuralColumn = YoloObjectTaxonomy.resolveLabel("structural column")
+        assertEquals(ObjectCategory.ENVIRONMENT, structuralColumn.category)
+        assertTrue(structuralColumn.isCriticalHazard)
+    }
+
+    @Test
+    fun testTableAndPillarDistanceEstimation() {
+        val tableMeta = YoloObjectTaxonomy.resolveLabel("table")
+        val distTable = YoloObjectTaxonomy.estimateDistance(tableMeta, heightRatio = 0.5f, widthRatio = 0.6f)
+        assertTrue(distTable in 1.0f..4.0f)
+
+        val pillarMeta = YoloObjectTaxonomy.resolveLabel("pillar")
+        val distPillar = YoloObjectTaxonomy.estimateDistance(pillarMeta, heightRatio = 0.8f, widthRatio = 0.2f)
+        assertTrue(distPillar in 1.5f..5.0f)
+    }
 }
