@@ -161,17 +161,30 @@ class ObjectDetectorHelper(
                     val detectorLabel = obj.labels.maxByOrNull { it.confidence }?.text?.trim()
                     val allObjLabels = obj.labels.map { it.text.trim().lowercase(Locale.ROOT) }
 
-                    // Check for Table and Pillar targets
-                    val isTable = isTableObject(detectorLabel, allObjLabels, dominantLabels)
-                    val isPillar = !isTable && isPillarObject(detectorLabel, allObjLabels, dominantLabels, heightRatio, widthRatio)
+                    // Check specifically for Chair, Table, and Room Pillar targets
+                    val isChair = isChairObject(detectorLabel, allObjLabels, dominantLabels)
+                    val isTable = !isChair && isTableObject(detectorLabel, allObjLabels, dominantLabels)
+                    val isPillar = !isChair && !isTable && isPillarObject(detectorLabel, allObjLabels, dominantLabels, heightRatio, widthRatio)
 
-                    if (!isTable && !isPillar) {
-                        continue // Strictly ignore any non-table, non-pillar object
+                    if (!isChair && !isTable && !isPillar) {
+                        continue // Strictly ignore any non-chair, non-table, non-pillar object
                     }
 
-                    val labelEn = if (isTable) "Table" else "Pillar"
-                    val labelHi = if (isTable) "मेज़" else "खंभा"
-                    val metaKey = if (isTable) "table" else "pillar"
+                    val labelEn = when {
+                        isChair -> "Chair"
+                        isTable -> "Table"
+                        else -> "Pillar"
+                    }
+                    val labelHi = when {
+                        isChair -> "कुर्सी"
+                        isTable -> "मेज़"
+                        else -> "खंभा"
+                    }
+                    val metaKey = when {
+                        isChair -> "chair"
+                        isTable -> "table"
+                        else -> "pillar"
+                    }
                     val meta = YoloObjectTaxonomy.resolveLabel(metaKey)
 
                     val estimatedDistanceMeters = YoloObjectTaxonomy.estimateDistance(
@@ -202,7 +215,7 @@ class ObjectDetectorHelper(
                         }
 
                         val evasionAdviceHi = when (position) {
-                            SpatialPosition.CENTER -> "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटें।"
+                            SpatialPosition.CENTER -> "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटकर आगे बढ़ें।"
                             SpatialPosition.LEFT -> "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटें।"
                             SpatialPosition.RIGHT -> "टकराने से बचने के लिए कृपया 2 से 3 फीट बाईं ओर हटें।"
                         }
@@ -219,7 +232,7 @@ class ObjectDetectorHelper(
                                 estimatedDistanceMeters = estimatedDistanceMeters,
                                 distanceDescriptionHi = "$distanceFeet फीट (${kotlin.math.round(estimatedDistanceMeters * 10f) / 10f}m)",
                                 distanceDescriptionEn = "$distanceFeet feet (${kotlin.math.round(estimatedDistanceMeters * 10f) / 10f}m)",
-                                category = if (isTable) ObjectCategory.FURNITURE else ObjectCategory.ENVIRONMENT,
+                                category = if (isPillar) ObjectCategory.ENVIRONMENT else ObjectCategory.FURNITURE,
                                 isBeyondThreshold = false,
                                 distanceFeet = distanceFeet,
                                 evasionAdviceEn = evasionAdviceEn,
@@ -229,8 +242,13 @@ class ObjectDetectorHelper(
                     }
                 }
 
-                // If bounding box detector missed it but scene-level classifier confirms a table or pillar
+                // If bounding box detector missed it but scene-level classifier confirms a chair, table, or pillar
                 if (results.isEmpty()) {
+                    val chairScene = dominantLabels.firstOrNull { (label, conf) ->
+                        conf >= 0.50f && listOf("chair", "armchair", "office chair", "seat", "stool", "folding chair").any {
+                            label.contains(it, ignoreCase = true)
+                        }
+                    }
                     val tableScene = dominantLabels.firstOrNull { (label, conf) ->
                         conf >= 0.50f && listOf("table", "desk", "dining table", "coffee table", "tabletop").any {
                             label.contains(it, ignoreCase = true)
@@ -242,24 +260,42 @@ class ObjectDetectorHelper(
                         }
                     }
 
-                    if (tableScene != null || pillarScene != null) {
-                        val isTable = tableScene != null
-                        val labelEn = if (isTable) "Table" else "Pillar"
-                        val labelHi = if (isTable) "मेज़" else "खंभा"
-                        val metaKey = if (isTable) "table" else "pillar"
+                    if (chairScene != null || tableScene != null || pillarScene != null) {
+                        val isChair = chairScene != null
+                        val isTable = !isChair && tableScene != null
+                        val isPillar = !isChair && !isTable && pillarScene != null
+                        val labelEn = when {
+                            isChair -> "Chair"
+                            isTable -> "Table"
+                            else -> "Pillar"
+                        }
+                        val labelHi = when {
+                            isChair -> "कुर्सी"
+                            isTable -> "मेज़"
+                            else -> "खंभा"
+                        }
+                        val metaKey = when {
+                            isChair -> "chair"
+                            isTable -> "table"
+                            else -> "pillar"
+                        }
                         val meta = YoloObjectTaxonomy.resolveLabel(metaKey)
-                        val conf = tableScene?.second ?: pillarScene?.second ?: 0.70f
+                        val conf = chairScene?.second ?: tableScene?.second ?: pillarScene?.second ?: 0.70f
                         val rectF = RectF(
                             imageWidth * 0.20f,
                             imageHeight * 0.15f,
                             imageWidth * 0.80f,
                             imageHeight * 0.85f
                         )
-                        val estimatedDistanceMeters = if (isTable) 1.8f else 2.4f
+                        val estimatedDistanceMeters = when {
+                            isChair -> 1.5f
+                            isTable -> 1.8f
+                            else -> 2.4f
+                        }
                         val distanceFeet = kotlin.math.round(estimatedDistanceMeters * 3.28f).toInt().coerceAtLeast(1)
 
                         val evasionAdviceEn = "Please move aside by 2 to 3 feet to your right to avoid collision."
-                        val evasionAdviceHi = "टकराने से बचने के लिए कृपया 2-3 फीट दाईं ओर हटें।"
+                        val evasionAdviceHi = "टकराने से बचने के लिए कृपया 2 से 3 फीट दाईं ओर हटकर आगे बढ़ें।"
 
                         results.add(
                             DetectedObject(
@@ -273,7 +309,7 @@ class ObjectDetectorHelper(
                                 estimatedDistanceMeters = estimatedDistanceMeters,
                                 distanceDescriptionHi = "$distanceFeet फीट (${estimatedDistanceMeters}m)",
                                 distanceDescriptionEn = "$distanceFeet feet (${estimatedDistanceMeters}m)",
-                                category = if (isTable) ObjectCategory.FURNITURE else ObjectCategory.ENVIRONMENT,
+                                category = if (isPillar) ObjectCategory.ENVIRONMENT else ObjectCategory.FURNITURE,
                                 isBeyondThreshold = false,
                                 distanceFeet = distanceFeet,
                                 evasionAdviceEn = evasionAdviceEn,
@@ -301,6 +337,27 @@ class ObjectDetectorHelper(
                 } catch (_: Exception) {}
                 isAnalyzingFrame = false
             }
+    }
+
+    private fun isChairObject(
+        detectorLabel: String?,
+        allObjLabels: List<String>,
+        dominantLabels: List<Pair<String, Float>>
+    ): Boolean {
+        val chairTerms = listOf("chair", "armchair", "office chair", "seat", "stool", "bench", "couch", "sofa", "folding chair", "desk chair", "wheelchair")
+        if (detectorLabel != null && chairTerms.any { detectorLabel.contains(it, ignoreCase = true) }) {
+            return true
+        }
+        if (allObjLabels.any { label -> chairTerms.any { label.contains(it, ignoreCase = true) } }) {
+            return true
+        }
+        val hasSceneChair = dominantLabels.any { (label, conf) ->
+            conf >= 0.35f && chairTerms.any { label.contains(it, ignoreCase = true) }
+        }
+        if (hasSceneChair && (detectorLabel.isNullOrBlank() || detectorLabel.equals("Home good", ignoreCase = true) || detectorLabel.equals("Furniture", ignoreCase = true))) {
+            return true
+        }
+        return false
     }
 
     private fun isTableObject(

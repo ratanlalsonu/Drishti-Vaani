@@ -385,19 +385,20 @@ fun VisionScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                val hasChair = uiState.detections.any { it.label.equals("Chair", ignoreCase = true) }
                 val hasTable = uiState.detections.any { it.label.equals("Table", ignoreCase = true) }
                 val hasPillar = uiState.detections.any { it.label.equals("Pillar", ignoreCase = true) }
                 Text(
                     text = if (!uiState.isDirectionSettled) {
-                        "नई दिशा स्कैन हो रही है..."
-                    } else if (hasTable && hasPillar) {
-                        "⚠️ मेज़ और खंभा डिटेक्टेड"
-                    } else if (hasPillar) {
-                        "⚠️ खंभा (Pillar) डिटेक्टेड"
-                    } else if (hasTable) {
-                        "⚠️ मेज़ (Table) डिटेक्टेड"
+                        "दिशा की जांच..."
+                    } else if (hasChair || hasTable || hasPillar) {
+                        val items = mutableListOf<String>()
+                        if (hasChair) items.add("कुर्सी")
+                        if (hasTable) items.add("मेज़")
+                        if (hasPillar) items.add("खंभा")
+                        "⚠️ " + items.joinToString(" + ") + " डिटेक्टेड"
                     } else {
-                        "मेज़ और खंभों की निगरानी जारी..."
+                        "✅ रास्ता आगे साफ़ है"
                     },
                     color = if (!uiState.isDirectionSettled) HighContrastYellow else if (uiState.detections.isNotEmpty()) HighContrastRed else HighContrastGreen,
                     fontSize = 11.sp,
@@ -599,7 +600,7 @@ fun VisionScreen(
                 }
 
                 Text(
-                    text = uiState.lastVocalized.ifEmpty { "वस्तुओं और दूरी को स्कैन किया जा रहा है..." },
+                    text = uiState.lastVocalized.ifEmpty { "रास्ता आगे साफ़ है, कोई बाधा नहीं है।" },
                     color = Color.White,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,

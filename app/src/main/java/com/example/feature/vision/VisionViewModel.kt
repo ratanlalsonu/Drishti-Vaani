@@ -41,7 +41,7 @@ data class VisionUiState(
 
 class VisionViewModel(application: Application) : AndroidViewModel(application) {
     private val database = DrishtiDatabase.getDatabase(application)
-    private val throttler = SpeechThrottler()
+    val guidanceCoordinator = ObstacleGuidanceCoordinator()
     private val hapticManager = HapticFeedbackManager(application)
     private val objectIdentifier = ObjectIdentifierService(application)
     private var directionTracker: DirectionOrientationTracker? = null
@@ -59,6 +59,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startVisionSession() {
         isVisionSessionActive = true
+        guidanceCoordinator.reset()
         _uiState.update {
             it.copy(
                 isAnalyzing = true,
@@ -66,7 +67,6 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                 isDirectionSettled = true
             )
         }
-        throttler.clear()
         startDirectionTracking()
     }
 
@@ -74,6 +74,7 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         isVisionSessionActive = false
         stopDirectionTracking()
         ttsManager?.stopSpeaking()
+        guidanceCoordinator.reset()
         _uiState.update {
             it.copy(
                 isAnalyzing = false,
@@ -81,7 +82,6 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                 hasAnnouncedCurrentDirection = false
             )
         }
-        throttler.clear()
     }
 
     fun startDirectionTracking() {
@@ -97,7 +97,6 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                             hasAnnouncedCurrentDirection = false
                         )
                     }
-                    throttler.clear()
                 },
                 onDirectionSettled = { _, _, hiName, enName ->
                     if (!isVisionSessionActive) return@DirectionOrientationTracker
@@ -108,9 +107,6 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
                             currentDirectionHi = hiName,
                             currentDirectionEn = enName
                         )
-                    }
-                    if (_uiState.value.detections.isNotEmpty()) {
-                        announceDirectionSurroundingsOnce(force = false)
                     }
                 }
             )
@@ -184,14 +180,13 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setRangeLimit(range: DetectionRangeLimit) {
         _uiState.update { it.copy(rangeLimit = range) }
-        throttler.clear()
+        guidanceCoordinator.reset()
         val speech = if (currentLanguage == AssistantLanguage.HINDI) {
             "डिटेक्शन रेंज ${range.labelHi} सेट की गई।"
         } else {
             "Detection range set to ${range.labelEn}."
         }
         ttsManager?.speak(speech, PriorityLevel.HIGH)
-        announceDirectionSurroundingsOnce(force = false)
     }
 
     fun onDetectionsReceived(objects: List<DetectedObject>, width: Int, height: Int) {
@@ -202,19 +197,24 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
         // Filter out any objects that exceed user range threshold (e.g. > 10m)
         val validRangeObjects = objects.filter { it.estimatedDistanceMeters <= currentMax }
 
+        val chairCount = validRangeObjects.count { it.label.equals("Chair", ignoreCase = true) }
         val tableCount = validRangeObjects.count { it.label.equals("Table", ignoreCase = true) }
         val pillarCount = validRangeObjects.count { it.label.equals("Pillar", ignoreCase = true) }
-        val primaryObstacle = validRangeObjects.minByOrNull { it.estimatedDistanceMeters }
+        val primaryObstacle = validRangeObjects.minByOrNull { it.distanceFeet }
 
         val status = when {
-            validRangeObjects.isEmpty() -> "Scanning: Tables & Pillars"
-            tableCount > 0 && pillarCount > 0 -> "$tableCount Table, $pillarCount Pillar detected"
-            pillarCount > 0 -> "$pillarCount Pillar in View"
-            else -> "$tableCount Table in View"
+            validRangeObjects.isEmpty() -> if (guidanceCoordinator.hasAnnouncedClearPath) "✅ रास्ता आगे साफ़ है" else "निगरानी सक्रिय"
+            else -> {
+                val items = mutableListOf<String>()
+                if (chairCount > 0) items.add("$chairCount कुर्सी")
+                if (tableCount > 0) items.add("$tableCount मेज़")
+                if (pillarCount > 0) items.add("$pillarCount खंभा")
+                "⚠️ " + items.joinToString(", ")
+            }
         }
 
         val collisionWarning = if (primaryObstacle != null) {
-            "${primaryObstacle.label} ${primaryObstacle.distanceFeet} FT (${primaryObstacle.position.name})"
+            "${primaryObstacle.hindiLabel} ${primaryObstacle.distanceFeet} FT (${primaryObstacle.position.spokenLabelHi})"
         } else ""
 
         val evasionText = if (primaryObstacle != null) {
@@ -234,116 +234,63 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        // Proactively alert the user whenever a Table or Pillar enters path/range
-        if (primaryObstacle != null && throttler.shouldAnnounce(primaryObstacle)) {
-            val alertSpeech = if (currentLanguage == AssistantLanguage.HINDI) {
-                val posStr = when (primaryObstacle.position) {
-                    SpatialPosition.LEFT -> "बाईं ओर"
-                    SpatialPosition.RIGHT -> "दाईं ओर"
-                    SpatialPosition.CENTER -> "सामने"
-                }
-                "सावधान! $posStr ${primaryObstacle.distanceFeet} फीट पर ${primaryObstacle.hindiLabel} है। ${primaryObstacle.evasionAdviceHi}"
-            } else {
-                val posStr = when (primaryObstacle.position) {
-                    SpatialPosition.LEFT -> "on your left"
-                    SpatialPosition.RIGHT -> "on your right"
-                    SpatialPosition.CENTER -> "directly ahead"
-                }
-                "Warning! ${primaryObstacle.label} ${primaryObstacle.distanceFeet} feet $posStr. ${primaryObstacle.evasionAdviceEn}"
-            }
-
+        // Process live guidance:
+        // - Announces clear path once when path is clear (Requirement 10)
+        // - Warns only twice per obstacle encounter (Requirement 2)
+        // - Informs accurate distance & 2-3 ft evasion (Requirements 1, 3, 9)
+        // - Warns multiple objects one by one professionally (Requirement 8)
+        // - Watches until user safely moves forward past obstacle (Requirement 2)
+        // - Stern silence after guidance without unnecessary chatter (Requirements 5 & 6)
+        val guidanceResult = guidanceCoordinator.processDetections(validRangeObjects, currentLanguage)
+        if (guidanceResult != null) {
             _uiState.update {
                 it.copy(
                     hasAnnouncedCurrentDirection = true,
-                    lastVocalized = alertSpeech
+                    lastVocalized = guidanceResult.speech,
+                    lastDirectionSummary = guidanceResult.speech
                 )
             }
 
-            // Urgent tactile feedback if very close (< 4-5 feet) to prevent collision
-            if (primaryObstacle.distanceFeet <= 4 || primaryObstacle.priority == PriorityLevel.CRITICAL) {
+            if (guidanceResult.isCollisionAlert) {
                 hapticManager.triggerCriticalHazard()
             } else {
                 hapticManager.triggerConfirmation()
             }
 
-            ttsManager?.speak(alertSpeech, PriorityLevel.HIGH)
-            recordDetection(primaryObstacle)
-            return
-        }
-
-        // When sweeping direction, only announce once if table or pillar was found
-        if (!_uiState.value.hasAnnouncedCurrentDirection && _uiState.value.isDirectionSettled) {
-            announceDirectionSurroundingsOnce(force = false)
+            ttsManager?.speak(guidanceResult.speech, guidanceResult.priority)
+            validRangeObjects.take(3).forEach { recordDetection(it) }
         }
     }
 
     /**
-     * Announces obstacle status: warns about tables and structural pillars with calculative distance
-     * and step-by-step avoidance advice (move aside by 2-3 feet left or right).
-     * If force = false and no obstacle is detected, it stays completely SILENT.
-     * If force = true (user explicitly asks 'what is ahead' or taps info), it answers directly.
+     * Announces obstacle status on demand when blind person explicitly asks 'what is ahead' or taps info.
      */
     fun announceDirectionSurroundingsOnce(force: Boolean = false) {
         if (!isVisionSessionActive && !force) return
-        if (!force && _uiState.value.hasAnnouncedCurrentDirection) {
-            return
-        }
 
         val validRangeObjects = _uiState.value.detections.filter {
             it.estimatedDistanceMeters <= _uiState.value.rangeLimit.maxMeters
         }
 
-        val centerObj = validRangeObjects.filter { it.position == SpatialPosition.CENTER }
-            .minByOrNull { it.estimatedDistanceMeters }
-        val leftObj = validRangeObjects.filter { it.position == SpatialPosition.LEFT }
-            .minByOrNull { it.estimatedDistanceMeters }
-        val rightObj = validRangeObjects.filter { it.position == SpatialPosition.RIGHT }
-            .minByOrNull { it.estimatedDistanceMeters }
-
-        val hasObstacle = centerObj != null || leftObj != null || rightObj != null
-
-        // If no table or pillar is found and not an explicit on-demand user question, REMAIN SILENT!
-        if (!hasObstacle && !force) {
-            _uiState.update { it.copy(hasAnnouncedCurrentDirection = true) }
+        if (validRangeObjects.isEmpty()) {
+            if (!force) return
+            val speech = if (currentLanguage == AssistantLanguage.HINDI) {
+                "रास्ता आगे एकदम क्लियर है, आप सीधे चल सकते हैं।"
+            } else {
+                "The path ahead is completely clear, you can walk straight."
+            }
+            _uiState.update {
+                it.copy(
+                    hasAnnouncedCurrentDirection = true,
+                    lastVocalized = speech,
+                    lastDirectionSummary = speech
+                )
+            }
+            ttsManager?.speak(speech, PriorityLevel.HIGH)
             return
         }
 
-        val speech = if (currentLanguage == AssistantLanguage.HINDI) {
-            val parts = mutableListOf<String>()
-            if (centerObj != null) {
-                parts.add("सामने ${centerObj.distanceFeet} फीट पर ${centerObj.hindiLabel} है। ${centerObj.evasionAdviceHi}")
-            }
-            if (leftObj != null) {
-                parts.add("बाईं ओर ${leftObj.distanceFeet} फीट पर ${leftObj.hindiLabel} है। ${leftObj.evasionAdviceHi}")
-            }
-            if (rightObj != null) {
-                parts.add("दाईं ओर ${rightObj.distanceFeet} फीट पर ${rightObj.hindiLabel} है। ${rightObj.evasionAdviceHi}")
-            }
-
-            if (parts.isNotEmpty()) {
-                parts.joinToString(" ")
-            } else {
-                "सामने कोई मेज़ या खंभा नहीं है।"
-            }
-        } else {
-            val parts = mutableListOf<String>()
-            if (centerObj != null) {
-                parts.add("Warning: ${centerObj.label} ${centerObj.distanceFeet} feet ahead. ${centerObj.evasionAdviceEn}")
-            }
-            if (leftObj != null) {
-                parts.add("Caution: ${leftObj.label} ${leftObj.distanceFeet} feet on your left. ${leftObj.evasionAdviceEn}")
-            }
-            if (rightObj != null) {
-                parts.add("Caution: ${rightObj.label} ${rightObj.distanceFeet} feet on your right. ${rightObj.evasionAdviceEn}")
-            }
-
-            if (parts.isNotEmpty()) {
-                parts.joinToString(" ")
-            } else {
-                "No table or pillar detected ahead."
-            }
-        }
-
+        val speech = guidanceCoordinator.buildInitialWarningSpeech(validRangeObjects, currentLanguage)
         _uiState.update {
             it.copy(
                 hasAnnouncedCurrentDirection = true,
@@ -354,7 +301,6 @@ class VisionViewModel(application: Application) : AndroidViewModel(application) 
 
         hapticManager.triggerConfirmation()
         ttsManager?.speak(speech, PriorityLevel.HIGH)
-
         validRangeObjects.take(3).forEach { recordDetection(it) }
     }
 

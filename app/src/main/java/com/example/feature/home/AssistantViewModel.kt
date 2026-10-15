@@ -203,13 +203,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 speakFeedback(timeMsg, timeMsgEn)
             }
 
-            is VoiceCommand.StartVision -> {
+            is VoiceCommand.StartVision, is VoiceCommand.Help -> {
                 hapticManager.triggerConfirmation()
                 if (navigationBackStack.lastOrNull() != "vision") {
                     navigationBackStack.add("vision")
                 }
                 _uiState.update { it.copy(isVisionActive = true, activeScreen = "vision") }
-                speakFeedback("Vision assistance shuru ho rahi hai. Live camera active.", "Vision assistance activated.")
+                val introHi = "मैं दृष्टि वाणी, आपकी चलने में मदद करुँगी।"
+                val introEn = "I am Drishti Vaani, I will help you walk."
+                speakFeedback(introHi, introEn)
             }
 
             is VoiceCommand.StopVision -> {
@@ -346,15 +348,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 val hindiMsg = "Vision detection range ${command.limit.labelHi} par set ki gayi."
                 val englishMsg = "Vision detection range set to ${command.limit.labelEn}."
                 speakFeedback(hindiMsg, englishMsg)
-            }
-
-            is VoiceCommand.Help -> {
-                hapticManager.triggerConfirmation()
-                if (navigationBackStack.lastOrNull() != "help") {
-                    navigationBackStack.add("help")
-                }
-                val helpMsg = "Aap bol sakte hain: 'Start Vision', 'Read Text', 'Where am I', 'Find nearest hospital', 'Emergency', 'Repeat', ya 'Settings'."
-                speakFeedback(helpMsg, helpMsg)
             }
 
             is VoiceCommand.QuerySurroundings -> {
